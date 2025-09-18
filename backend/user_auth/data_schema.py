@@ -1,18 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 class UserCreate(BaseModel):
-    org_name: str
-    username: str
-    password: str
-    work_email: str
-    dob: str
-    profession: str
-    address: str
-    pincode: str
-    contact_number: str
-    email: str
-    latitude: str
-    longitude: str
+    org_name: str               
+    admin_name: str             
+    admin_email: EmailStr       
+    password: str              
+    consent: bool = False    
 
 
 class Token(BaseModel):

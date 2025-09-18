@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from fastapi.security import OAuth2PasswordRequestForm
-from backend.user_auth.core import verify_token, Secret_key, algo, oauth2, create_access_token, register_user, login_for_access_token, Users, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES
-from backend.user_auth.data_schema import UserCreate
+from user_auth.core import verify_token, Secret_key, algo, oauth2, create_access_token, register_user, login_for_access_token, Users, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES
+from user_auth.data_schema import UserCreate
 from jose import JWTError, jwt
 from datetime import timedelta
 import httpx
@@ -19,20 +19,17 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
 # Register a new user
 @router.post("/register", status_code=201)
 async def register(user: UserCreate):
-    existing_user = Users.find_one({"username": user.username.lower()})
+    if not user.consent:
+        raise HTTPException(status_code=400, detail="Consent required to register")
+    existing_user = Users.find_one({"admin_email": user.admin_email.lower()})
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username already exists")
+        raise HTTPException(status_code=400, detail="Admin Email already exists")
     new_user = await register_user(
-        user.username,
+        user.org_name,
+        user.admin_name,
+        user.admin_email,
         user.password,
-        user.dob,
-        user.profession,
-        user.address,
-        user.pincode,
-        user.contact_number,
-        user.email,
-        user.latitude,
-        user.longitude,)
+        )
 
     return {"message": "User registered successfully"}
 
@@ -109,16 +106,15 @@ async def refresh_token(refresh_token: str = Cookie(None)):
         raise HTTPException(status_code=403, detail='Refresh token not found!!')
     try:
         payload = jwt.decode(refresh_token, Secret_key, algorithms=[algo])
-        username: str = payload.get("sub")
-        if not username:
+        admin_email: str = payload.get("sub")
+        if not admin_email:
             raise HTTPException(status_code=403, detail="Invalid refresh token")
     except JWTError:
         raise HTTPException(status_code=403, detail="refresh token expired, login Again!!")
 
     # Generate new access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    new_access_token = create_access_token(data={"sub": username}, expires_delta=access_token_expires)
-
+    new_access_token = create_access_token(data={"sub": admin_email}, expires_delta=access_token_expires)
     return new_access_token
 
 # User login and token generation
@@ -146,17 +142,17 @@ async def protected(response:Response, access_token: str = Cookie(None)):
         access_token = access_token[len("Bearer "):]
     
     try:
-        username = verify_token(access_token, credentials_exception)
+        admin_email = verify_token(access_token, credentials_exception)
     except HTTPException as e:
         if e.status_code == 401 and "expired" in str(e.detail):
             # Attempt to refresh the token
             new_access_token = await refresh_token()
             # Optionally, set the new access token in the cookies
             response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='lax')
-            username = verify_token(new_access_token, credentials_exception) 
+            admin_email = verify_token(new_access_token, credentials_exception) 
         else:
             raise e
-    user = Users.find_one({"username": username})
+    user = Users.find_one({"admin_email": admin_email})
     if not user:
         raise credentials_exception
     
@@ -182,17 +178,17 @@ async def logout(response: Response, access_token: str = Cookie(None)):
         access_token = access_token[len("Bearer "):]
     
     try:
-        username = verify_token(access_token, credentials_exception)
+        admin_email = verify_token(access_token, credentials_exception)
     except HTTPException as e:
         if e.status_code == 401 and "expired" in str(e.detail):
             # Attempt to refresh the token
             new_access_token = await refresh_token()
             # Optionally, set the new access token in the cookies
             response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='lax')
-            username = verify_token(new_access_token, credentials_exception) 
+            admin_email = verify_token(new_access_token, credentials_exception) 
         else:
             raise e
-    user = Users.find_one({"username": username})
+    user = Users.find_one({"admin_email": admin_email})
     if not user:
         raise credentials_exception
 

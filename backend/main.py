@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from fastapi import FastAPI
-from backend.user_auth.routes import router
+from user_auth.routes import router
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
