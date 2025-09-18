@@ -1,0 +1,83 @@
+.modal,
+.modal-backdrop {
+  transition: none !important;
+}
+
+.modal.show .modal-dialog {
+  transform: none !important;
+}
+:root {
+  --brand-dark: #0b1b2b;
+  --brand-accent: #c5ad6e; /* refined gold tone */
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--brand-dark);
+  background: #fff;
+}
+
+.btn-dark {
+  background-color: var(--brand-dark);
+  border-color: var(--brand-dark);
+}
+.btn-dark:hover {
+  filter: brightness(1.05);
+}
+
+.btn-outline-dark:hover {
+  background-color: var(--brand-dark);
+  color: #fff;
+}
+
+.card {
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.5rem 1rem rgba(0,0,0,.08) !important;
+}
+
+input.form-control:focus, .form-check-input:focus, button:focus {
+  box-shadow: 0 0 0 .25rem rgba(191, 166, 107, .25) !important;
+  border-color: var(--brand-accent) !important;
+}
+
+.btn-warning,
+.bg-warning {
+  background-color: var(--brand-accent) !important;
+  border-color: var(--brand-accent) !important;
+}
+
+/* Premium gold accent utilities */
+.text-accent { color: var(--brand-accent) !important; }
+.border-accent { border-color: var(--brand-accent) !important; }
+.bg-accent-soft { background-color: rgba(191,166,107,.12) !important; }
+
+/* Gold-accent badge for warnings/neutral info */
+.badge-gold {
+  background-color: rgba(191,166,107,.12) !important;
+  color: #7a693b !important;
+  border: 1px solid rgba(191,166,107,.45) !important;
+}
+
+/* Make notification dropdown visible on white */
+.dropdown-menu {
+  border: 1px solid rgba(191,166,107,.4) !important;
+  box-shadow: 0 0.5rem 1rem rgba(0,0,0,.08);
+}
+
+/* Reduce modal transition to avoid flicker on some GPUs */
+.modal.fade .modal-dialog {
+  transition: transform .1s ease-out;
+}
+
+.notif-toggle.btn {
+  border-color: rgba(191,166,107,.6) !important;
+}
+.notif-toggle.btn:hover,
+.notif-toggle.btn:focus {
+  box-shadow: 0 0 0 .2rem rgba(191,166,107,.25) !important;
+}
+
+
