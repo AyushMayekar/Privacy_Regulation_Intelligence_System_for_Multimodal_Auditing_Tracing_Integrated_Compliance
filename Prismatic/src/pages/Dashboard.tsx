@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { logout, getActiveSession } from '../services/DummyDatabase.jsx'
 import ScanHistory from '../features/scan-history/ScanHistory'
 import DsarRequests from '../features/dsar/DsarRequests'
-import Logs from '../features/logs/Logs'
+import Logs from '../features/logs_trail/Logs'
 import Settings from '../features/settings/Settings'
 import Policies from '../features/policies/Policies'
 
