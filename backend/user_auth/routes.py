@@ -7,7 +7,7 @@ from datetime import timedelta
 import httpx
 import os
 
-router = APIRouter()
+router_auth = APIRouter()
 
 '''
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -17,7 +17,7 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
 '''
 
 # Register a new user
-@router.post("/register", status_code=201)
+@router_auth.post("/register", status_code=201)
 async def register(user: UserCreate):
     if not user.consent:
         raise HTTPException(status_code=400, detail="Consent required to register")
@@ -35,7 +35,7 @@ async def register(user: UserCreate):
 
 # Oauth
 '''
-@router.post("/google-login")
+@router_auth.post("/google-login")
 async def google_login(response: Response, code: str):
     # Exchange code for tokens
     data = {
@@ -100,7 +100,7 @@ async def google_login(response: Response, code: str):
     return {"message": "Google OAuth login successful", "access_token": access_token}
 '''
 
-@router.get("/refresh")
+@router_auth.get("/refresh")
 async def refresh_token(refresh_token: str = Cookie(None)):
     if not refresh_token: 
         raise HTTPException(status_code=403, detail='Refresh token not found!!')
@@ -118,12 +118,12 @@ async def refresh_token(refresh_token: str = Cookie(None)):
     return new_access_token
 
 # User login and token generation
-@router.post("/token")
+@router_auth.post("/token")
 async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     return await login_for_access_token(response, form_data)
 
 # Protected route example: Only accessible with valid token
-@router.get("/protected")
+@router_auth.get("/protected")
 async def protected(response:Response, access_token: str = Cookie(None)):
     if not access_token:
         raise HTTPException(
@@ -159,7 +159,7 @@ async def protected(response:Response, access_token: str = Cookie(None)):
     return {"message": 'Authenticated' }
 
 # Logout
-@router.post("/logout")
+@router_auth.post("/logout")
 async def logout(response: Response, access_token: str = Cookie(None)):
     if not access_token:
         raise HTTPException(
@@ -196,3 +196,9 @@ async def logout(response: Response, access_token: str = Cookie(None)):
     response.delete_cookie("access_token")
     
     return {"message": "Successfully logged out"}
+
+''' 
+Testing User
+ayush01.mayekar@example.com
+SecurePass@123
+'''

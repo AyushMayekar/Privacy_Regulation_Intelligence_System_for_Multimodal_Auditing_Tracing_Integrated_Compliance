@@ -1,7 +1,7 @@
 import os
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, Response
-from config import Users
+from config import Users, Secret_key
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from typing import Optional
@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from pydantic import EmailStr
 
 load_dotenv()
-Secret_key = os.getenv('Secret_key')
 algo = 'HS256'
 
 # Token expiration time
