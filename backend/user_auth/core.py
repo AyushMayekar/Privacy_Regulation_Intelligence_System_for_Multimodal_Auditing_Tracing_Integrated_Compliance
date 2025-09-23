@@ -1,6 +1,5 @@
-import os
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi import Depends, HTTPException, Response
+from fastapi import Depends, HTTPException, Response, Cookie
 from config import Users, Secret_key
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -40,6 +39,17 @@ def verify_token(token: str, credentials_exception):
         if "expired" in str(e):
             raise HTTPException(status_code=401, detail="Access token has expired.")
         raise credentials_exception
+
+def extract_and_verify_token(access_token: str = Cookie(None)):
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Missing access token")
+    
+    # Remove 'Bearer ' prefix if present
+    if access_token.startswith("Bearer "):
+        access_token = access_token[len("Bearer "):]
+    
+    # Verify the token and return admin_email
+    return verify_token(access_token, HTTPException(status_code=401, detail="Invalid token"))
 
 def hash_password(password: str):
     return pwd_context.hash(password)
