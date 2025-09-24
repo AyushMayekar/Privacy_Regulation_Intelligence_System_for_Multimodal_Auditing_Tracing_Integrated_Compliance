@@ -1,19 +1,11 @@
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, Response, Cookie
-from config import Users, Secret_key
+from config import Users, Secret_key, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES, algo
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from typing import Optional
 from passlib.context import CryptContext
-from dotenv import load_dotenv
 from pydantic import EmailStr
-
-load_dotenv()
-algo = 'HS256'
-
-# Token expiration time
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_MINUTES = 525600
 
 # hashing password
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
