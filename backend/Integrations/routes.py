@@ -6,7 +6,6 @@ from integrations.core import MongoConnection, GmailConnection, GmailCallback
 
 router_integrate = APIRouter()
 
-# mongodb+srv://ayush224947101:AYUSH21@cluster0.mq8dx3f.mongodb.net/
 # Mongo (Structured)
 @router_integrate.post("/mongo")
 async def connect_mongo(data: MongoIntegration, admin_email: str = Depends(extract_and_verify_token)):

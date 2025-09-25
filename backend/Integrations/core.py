@@ -2,12 +2,8 @@ from pymongo import MongoClient
 from config import Integrations
 import requests
 import urllib.parse
-from config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REDIRECT_URI, SCOPES
+from config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REDIRECT_URI, SCOPES, cipher
 import secrets
-from passlib.context import CryptContext
-
-# Initialize password context for encryption (same as user_auth)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def MongoConnection(mongo_uri: str, admin_email: str):
     """
@@ -24,10 +20,9 @@ def MongoConnection(mongo_uri: str, admin_email: str):
         # Test MongoDB connection
         client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
         client.admin.command("ping")  # simple check
-        client.close()
         
         # Encrypt MongoDB URI before storing
-        encrypted_mongo_uri = pwd_context.hash(mongo_uri)
+        encrypted_mongo_uri = cipher.encrypt(mongo_uri.encode()).decode()
         
         # Store connection details in Integrations collection
         Integrations.update_one(
@@ -41,11 +36,11 @@ def MongoConnection(mongo_uri: str, admin_email: str):
             upsert=True
         )
         
-        return {"success": True, "message": f"MongoDB connected successfully for {admin_email}"}
+        return {"success": True, "message": f"MongoDB connected successfully for {admin_email}", "client": client}
         
     except Exception as e:
         # Encrypt MongoDB URI before storing (even on failure)
-        encrypted_mongo_uri = pwd_context.hash(mongo_uri)
+        encrypted_mongo_uri = cipher.encrypt(mongo_uri.encode()).decode()
         
         # Mark connection as failed
         Integrations.update_one(
@@ -128,7 +123,7 @@ def GmailCallback(code: str, admin_email: str):
             return {"success": False, "message": "Failed to obtain refresh token"}
         
         # Encrypt refresh token before storing
-        encrypted_refresh_token = pwd_context.hash(refresh_token)
+        encrypted_refresh_token = cipher.encrypt(refresh_token.encode()).decode()
         
         # Store refresh token and mark Gmail connection as successful
         Integrations.update_one(
