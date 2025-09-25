@@ -1,20 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from fastapi.security import OAuth2PasswordRequestForm
-from user_auth.core import verify_token, Secret_key, algo, oauth2, create_access_token, register_user, login_for_access_token, Users, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES
+from user_auth.core import verify_token, create_access_token, register_user, login_for_access_token
+from config import Users, Secret_key, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES, algo
 from user_auth.data_schema import UserCreate
 from jose import JWTError, jwt
 from datetime import timedelta
-import httpx
-import os
 
 router_auth = APIRouter()
-
-'''
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
-'''
 
 # Register a new user
 @router_auth.post("/register", status_code=201)

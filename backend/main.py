@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from config import Secret_key
 from user_auth.routes import router_auth
-from Integrations.routes import router_integrate
+from integrations.routes import router_integrate
 from starlette.middleware.sessions import SessionMiddleware
 
 # Add the project root to Python path
