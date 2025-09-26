@@ -4,23 +4,84 @@ from config import Integrations, cipher
 from integrations.core import MongoConnection
 from datetime import datetime
 from pymongo import MongoClient
+from dateutil import parser
 
 # --- Regex patterns for PII/PHI (MVP) ---
 PII_PATTERNS = {
-    "aadhaar": re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"),
+    "aadhaar": re.compile(r"\b[2-9][0-9]{3}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b"),
     "pan": re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b", re.IGNORECASE),
     "email": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
     "phone": re.compile(r"\b\d{10}\b"),
+    "credit_card": re.compile(r"\b(?:\d[ -]*?){13,16}\b"), 
+    "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), 
+    "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+    "dob": re.compile(r"\b(0?[1-9]|[12][0-9]|3[01])[- /.](0?[1-9]|1[0-2])[- /.](19|20)\d\d\b"),
+    "passport": re.compile(r"\b[A-PR-WY][1-9]\d\s?\d{4}[1-9]\b", re.IGNORECASE),
+
 }
-HEALTH_KEYWORDS = re.compile(r"\b(diabetes|cancer|asthma|blood sugar|diagnosis|patient)\b", re.IGNORECASE)
+HEALTH_KEYWORDS = re.compile(r"\b(diabetes|cancer|asthma|blood sugar|diagnosis|patient|prescription|treatment|allergy)\b", re.IGNORECASE)
 
 COMPLIANCE_MAP = {
     "aadhaar": ["DPDP"],
     "pan": ["DPDP", "GDPR"],
     "email": ["GDPR", "CCPA"],
     "phone": ["GDPR", "CCPA"],
+    "credit_card": ["PCI-DSS", "GDPR"],
+    "ssn": ["HIPAA", "GDPR"],
+    "ip_address": ["GDPR", "CCPA"],
+    "dob": ["GDPR", "CCPA"],
+    "passport": ["GDPR"],
     "health": ["HIPAA", "GDPR"]
 }
+
+def normalize_value(val: str, p_type: str) -> str:
+    """Normalize values for deduplication of PII/PHI."""
+    val = val.strip()
+
+    if p_type == "aadhaar":
+        # Aadhaar = 12 digits
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "pan":
+        # PAN = uppercase for consistency
+        return val.upper()
+    
+    if p_type == "phone":
+        # Keep only digits, last 10
+        return re.sub(r"\D", "", val)[-10:]
+    
+    if p_type == "email":
+        # Lowercase email for uniformity
+        return val.lower()
+    
+    if p_type == "credit_card":
+        # Remove all non-digits, mask spaces/hyphens
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "ssn":
+        # US SSN -> digits only
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "ip_address":
+        # Standardize IP to lowercase (IPv6 can have hex chars)
+        return val.lower()
+    
+    if p_type == "dob":
+        # Normalize date format -> YYYY-MM-DD
+        try:
+            return parser.parse(val, dayfirst=True).strftime("%Y-%m-%d")
+        except Exception:
+            return val  # return raw if parsing fails
+    
+    if p_type == "passport":
+        # Uppercase passport numbers
+        return val.upper()
+    
+    if p_type == "health":
+        # For health conditions -> lowercase and strip spaces
+        return val.lower()
+    
+    return val
 
 def map_to_laws(pii_type: str) -> List[str]:
     return COMPLIANCE_MAP.get(pii_type, [])
@@ -83,6 +144,7 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
     """
     
     findings = []
+    seen = {}
 
     connection_result = MongoConnection(mongo_uri, admin_email)
     if not connection_result.get("success"):
@@ -112,13 +174,17 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                     if not val_str.strip():
                         continue
 
+                    lname = field_path.lower()
                     matched = False
                     # --- Regex detection ---
                     for p_type, pattern in PII_PATTERNS.items():
                         m = pattern.search(val_str)
                         if m:
                             matched = True
-                            findings.append({
+                            norm_val = normalize_value(m.group(0), p_type)
+                            key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, p_type)
+                            if key not in seen:
+                                finding = {
                                 "collection": f"{dbn}.{coll}",
                                 "document_id": doc_id,
                                 "field_path": field_path,
@@ -127,13 +193,19 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                                 "type": p_type,
                                 "confidence": 0.95,
                                 "mapped_laws": map_to_laws(p_type),
-                                "detector": "regex",
-                                "timestamp": datetime.utcnow()
-                            })
+                                "detectors": ["regex"],
+                                "timestamp": datetime.utcnow(),
+                                }
+                                seen[key] = finding
+                            else:
+                                seen[key]["detectors"].append("regex")
 
                     # --- Health keywords ---
                     if not matched and HEALTH_KEYWORDS.search(val_str):
-                        findings.append({
+                        norm_val = normalize_value(val_str, "health")
+                        key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, "health")
+                        if key not in seen:
+                            finding = {
                             "collection": f"{dbn}.{coll}",
                             "document_id": doc_id,
                             "field_path": field_path,
@@ -142,22 +214,29 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                             "type": "health",
                             "confidence": 0.75,
                             "mapped_laws": map_to_laws("health"),
-                            "detector": "keyword",
-                            "timestamp": datetime.utcnow()
-                        })
+                            "detectors": ["keyword"],
+                            "timestamp": datetime.utcnow(),
+                        }
+                            seen[key] = finding
+                        else:
+                            seen[key]["detectors"].append("keyword")
 
                     # --- Field name heuristic ---
-                    lname = field_path.lower()
                     heuristics = {
                         "aadhaar": ["aadhaar", "aadhar"],
                         "pan": ["pan"],
                         "email": ["email", "e_mail", "mail"],
                         "phone": ["phone", "mobile", "contact"],
+                        "dob": ["dob", "birth", "birthday", "birthdate"],
+                        "passport": ["passport"],
                         "health": ["medical", "health", "diagnosis", "patient"]
                     }
                     for p_type, keywords in heuristics.items():
                         if any(k in lname for k in keywords):
-                            findings.append({
+                            norm_val = normalize_value(val_str, p_type)
+                            key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, p_type)
+                            if key not in seen:
+                                finding = {
                                 "collection": f"{dbn}.{coll}",
                                 "document_id": doc_id,
                                 "field_path": field_path,
@@ -166,12 +245,32 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                                 "type": p_type,
                                 "confidence": 0.6,
                                 "mapped_laws": map_to_laws(p_type),
-                                "detector": "field-name-heuristic",
+                                "detectors": ["field-name-heuristic"],
                                 "timestamp": datetime.utcnow()
-                            })
+                            }
+                                seen[key] = finding
+                            else:
+                                seen[key]["detectors"].append("field-name-heuristic")
                             break
 
     client.close()
+
+    for finding in seen.values():
+        detectors = set(finding["detectors"])
+        if detectors == {"regex"}:
+            finding["confidence"] = 0.95
+        elif detectors == {"keyword"}:
+            finding["confidence"] = 0.75
+        elif detectors == {"field-name-heuristic"}:
+            finding["confidence"] = 0.60
+        elif detectors == {"regex", "field-name-heuristic"}:
+            finding["confidence"] = 0.97
+        elif detectors == {"regex", "keyword"}:
+            finding["confidence"] = 0.96
+        elif len(detectors) == 3:
+            finding["confidence"] = 0.99
+
+    findings = list(seen.values())
     return findings
 
 def scan_gmail ():
