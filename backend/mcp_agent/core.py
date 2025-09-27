@@ -1,38 +1,16 @@
-import re, json
+import re, json, base64, asyncio, httpx
 from typing import List, Dict, Any
-from config import Integrations, cipher
+from config import Integrations, cipher, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 from integrations.core import MongoConnection
 from datetime import datetime
 from pymongo import MongoClient
 from dateutil import parser
+from mcp_agent.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
+from transformers import pipeline
 
-# --- Regex patterns for PII/PHI (MVP) ---
-PII_PATTERNS = {
-    "aadhaar": re.compile(r"\b[2-9][0-9]{3}[\s-]?[0-9]{4}[\s-]?[0-9]{4}\b"),
-    "pan": re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b", re.IGNORECASE),
-    "email": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
-    "phone": re.compile(r"\b\d{10}\b"),
-    "credit_card": re.compile(r"\b(?:\d[ -]*?){13,16}\b"), 
-    "ssn": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), 
-    "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
-    "dob": re.compile(r"\b(0?[1-9]|[12][0-9]|3[01])[- /.](0?[1-9]|1[0-2])[- /.](19|20)\d\d\b"),
-    "passport": re.compile(r"\b[A-PR-WY][1-9]\d\s?\d{4}[1-9]\b", re.IGNORECASE),
-
-}
-HEALTH_KEYWORDS = re.compile(r"\b(diabetes|cancer|asthma|blood sugar|diagnosis|patient|prescription|treatment|allergy)\b", re.IGNORECASE)
-
-COMPLIANCE_MAP = {
-    "aadhaar": ["DPDP"],
-    "pan": ["DPDP", "GDPR"],
-    "email": ["GDPR", "CCPA"],
-    "phone": ["GDPR", "CCPA"],
-    "credit_card": ["PCI-DSS", "GDPR"],
-    "ssn": ["HIPAA", "GDPR"],
-    "ip_address": ["GDPR", "CCPA"],
-    "dob": ["GDPR", "CCPA"],
-    "passport": ["GDPR"],
-    "health": ["HIPAA", "GDPR"]
-}
+dsar_classifier = pipeline(
+            "zero-shot-classification", 
+            model="typeform/distilbert-base-uncased-mnli")
 
 def normalize_value(val: str, p_type: str) -> str:
     """Normalize values for deduplication of PII/PHI."""
@@ -102,6 +80,7 @@ def flatten_doc(doc: dict, parent: str = "") -> Dict[str, Any]:
             out[path] = str(v) if v is not None else ""
     return out
 
+# Mongo Scanning Logic
 def scan_mongo(admin_email: str):
     """
     Scan MongoDB collection for sensitive data (PII/PHI).
@@ -273,8 +252,202 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
     findings = list(seen.values())
     return findings
 
-def scan_gmail ():
-    pass
+# Gmail Scanning Logic
+def get_refresh_token(admin_email: str) -> str:
+    """Fetch and decrypt refresh token from MongoDB."""
+    integration = Integrations.find_one({"admin_email": admin_email})
+    if not integration or not integration.get("GmailConnection"):
+        raise Exception("Gmail not connected for this admin_email")
+    
+    encrypted_refresh_token = integration.get("encrypted_gmail_refresh_token")
+    if not encrypted_refresh_token:
+        raise Exception("No refresh token found")
+    
+    # Decrypt token
+    refresh_token = cipher.decrypt(encrypted_refresh_token.encode()).decode()
+    return refresh_token
+
+async def get_access_token(refresh_token: str) -> str:
+    """Exchange refresh token for access token using Google OAuth."""
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token"
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data=payload, timeout=30.0)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread()          
+        data = json.loads(raw_bytes.decode())
+    if "access_token" not in data:
+        raise Exception(f"Failed to get access token: {data}")
+    return data["access_token"]
+
+async def list_emails(access_token: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    """Get list of emails from Gmail API."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults={max_results}"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread()           
+        data = json.loads(raw_bytes.decode())
+    return data.get("messages", [])
+
+async def fetch_email(access_token: str, message_id: str) -> Dict[str, Any]:
+    """Fetch full email content for a single message."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}?format=full"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread() # read the response body asynchronously
+        data = json.loads(raw_bytes.decode())
+    
+    # Extract headers
+    headers_data = {h['name']: h.get('value', '') for h in data.get('payload', {}).get('headers', [])}
+    
+    # Extract body (plain text if available)
+    body = ""
+    for part in data.get('payload', {}).get('parts', []):
+        if part.get('mimeType') == "text/plain":
+            body_data = part.get('body', {}).get('data', "")
+            if body_data:
+                body += base64.urlsafe_b64decode(body_data.encode()).decode()
+    
+    return {
+        "message_id": message_id,
+        "thread_id": data.get("threadId"),
+        "from": headers_data.get("From", ""),
+        "subject": headers_data.get("Subject", ""),
+        "body": body
+    }
+
+sem = asyncio.Semaphore(5)
+
+async def fetch_with_limit(access_token, eid):
+    async with sem:
+        return await fetch_email(access_token, eid)
+
+async def fetch_all_emails(access_token: str, email_ids: List[str]) -> List[Dict[str, Any]]:
+    tasks = [fetch_with_limit(access_token, eid) for eid in email_ids]
+    return await asyncio.gather(*tasks)
+
+async def scan_email_content(email: Dict[str, Any], dsar_classifier=dsar_classifier) -> List[Dict[str, Any]]:
+    """Scan a single email's content for PII/PHI/DSAR."""
+    findings = []
+    seen = {}
+    # Combine headers + body
+    content = f"{email['from']} {email['subject']} {email['body']}"
+    
+    # --- Regex PII/PHI ---
+    for p_type, pattern in PII_PATTERNS.items():
+        for m in pattern.finditer(content):
+            norm_val = normalize_value(m.group(0), p_type)
+            key = (email["message_id"], norm_val, p_type)
+            if key not in seen:
+                finding = {
+                    "email_id": email["message_id"],
+                    "thread_id": email["thread_id"],
+                    "from": email["from"],
+                    "subject": email["subject"],
+                    "value": m.group(0),
+                    "normalized_value": norm_val,
+                    "type": p_type,
+                    "confidence": 0.95,
+                    "mapped_laws": COMPLIANCE_MAP.get(p_type, []),
+                    "detectors": ["regex"],
+                    "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    
+    # --- Health keywords ---
+    for m in HEALTH_KEYWORDS.finditer(content):
+        norm_val = normalize_value(m.group(0), "health")
+        key = (email["message_id"], norm_val, "health")
+        if key not in seen:
+            finding = {
+                "email_id": email["message_id"],
+                "thread_id": email["thread_id"],
+                "from": email["from"],
+                "subject": email["subject"],
+                "value": m.group(0),
+                "normalized_value": norm_val,
+                "type": "health",
+                "confidence": 0.75,
+                "mapped_laws": COMPLIANCE_MAP.get("health", []),
+                "detectors": ["keyword"],
+                "timestamp": datetime.utcnow()
+            }
+            seen[key] = finding
+    
+    # --- DSAR requests ---
+    for dsar_type, pattern in DSAR_PATTERNS.items():
+        for m in pattern.finditer(content):
+            norm_val = m.group(0).lower()
+            key = (email["message_id"], norm_val, "dsar")
+            if key not in seen:
+                finding = {
+                "email_id": email["message_id"],
+                "thread_id": email["thread_id"],
+                "from": email["from"],
+                "subject": email["subject"],
+                "value": m.group(0),
+                "normalized_value": norm_val,
+                "type": "dsar",
+                "dsar_category": dsar_type,
+                "confidence": 0.85,
+                "mapped_laws": ["GDPR", "CCPA"],  # DSAR is usually under these
+                "detectors": ["keyword"],
+                "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    # NLP DSAR Detector
+    result = await asyncio.to_thread(dsar_classifier, content, candidate_labels=DSAR_LABELS)
+    for label, score in zip(result["labels"], result["scores"]):
+        if score > 0.7:  # threshold
+            key = (email["message_id"], label, "dsar")
+            if key not in seen:
+                finding = {
+                    "email_id": email["message_id"],
+                    "thread_id": email["thread_id"],
+                    "from": email["from"],
+                    "subject": email["subject"],
+                    "value": content[:200],  # snippet for context
+                    "normalized_value": label,
+                    "type": "dsar",
+                    "dsar_category": label,
+                    "confidence": float(score),
+                    "mapped_laws": ["GDPR", "CCPA"],
+                    "detectors": ["zero-shot-nlp"],
+                    "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    
+    findings = list(seen.values())
+    return findings
+
+async def scan_gmail(admin_email: str) -> List[Dict[str, Any]]:
+    """Scan connected Gmail account for PII/PHI and DSAR requests."""
+    
+    # Get decrypted refresh token
+    refresh_token = get_refresh_token(admin_email)
+    
+    # Exchange refresh token for access token
+    access_token = await get_access_token(refresh_token)
+    
+    # List emails (first 50 by default)
+    emails = await list_emails(access_token)
+    email_ids = [e["id"] for e in emails]
+    all_emails = await fetch_all_emails(access_token, email_ids)
+
+    
+    tasks = [scan_email_content(e, dsar_classifier = dsar_classifier) for e in all_emails]
+    all_findings = await asyncio.gather(*tasks)
+    
+    return [f for sublist in all_findings for f in sublist]
 
 def mask_data ():
     pass

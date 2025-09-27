@@ -10,9 +10,9 @@ def mongo_scan(admin_email) -> dict:
     return scan_mongo(admin_email)
 
 @app.tool()
-def gmail_scan(user_email: str) -> dict:
+async def gmail_scan(user_email: str) -> dict:
     """Scan Gmail for PII/PHI."""
-    return scan_gmail(user_email)
+    return await scan_gmail(user_email)
 
 @app.tool()
 def mask(findings: list) -> list:
