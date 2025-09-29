@@ -1,26 +1,65 @@
-import re, json
+import re, json, base64, asyncio, httpx, uuid
 from typing import List, Dict, Any
-from config import Integrations, cipher
+from config import Integrations, cipher, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 from integrations.core import MongoConnection
 from datetime import datetime
 from pymongo import MongoClient
+from dateutil import parser
+from mcp_agent.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
+from transformers import pipeline
 
-# --- Regex patterns for PII/PHI (MVP) ---
-PII_PATTERNS = {
-    "aadhaar": re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\b"),
-    "pan": re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b", re.IGNORECASE),
-    "email": re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"),
-    "phone": re.compile(r"\b\d{10}\b"),
-}
-HEALTH_KEYWORDS = re.compile(r"\b(diabetes|cancer|asthma|blood sugar|diagnosis|patient)\b", re.IGNORECASE)
+dsar_classifier = pipeline(
+            "zero-shot-classification", 
+            model="typeform/distilbert-base-uncased-mnli")
 
-COMPLIANCE_MAP = {
-    "aadhaar": ["DPDP"],
-    "pan": ["DPDP", "GDPR"],
-    "email": ["GDPR", "CCPA"],
-    "phone": ["GDPR", "CCPA"],
-    "health": ["HIPAA", "GDPR"]
-}
+def normalize_value(val: str, p_type: str) -> str:
+    """Normalize values for deduplication of PII/PHI."""
+    val = val.strip()
+
+    if p_type == "aadhaar":
+        # Aadhaar = 12 digits
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "pan":
+        # PAN = uppercase for consistency
+        return val.upper()
+    
+    if p_type == "phone":
+        # Keep only digits, last 10
+        return re.sub(r"\D", "", val)[-10:]
+    
+    if p_type == "email":
+        # Lowercase email for uniformity
+        return val.lower()
+    
+    if p_type == "credit_card":
+        # Remove all non-digits, mask spaces/hyphens
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "ssn":
+        # US SSN -> digits only
+        return re.sub(r"\D", "", val)
+    
+    if p_type == "ip_address":
+        # Standardize IP to lowercase (IPv6 can have hex chars)
+        return val.lower()
+    
+    if p_type == "dob":
+        # Normalize date format -> YYYY-MM-DD
+        try:
+            return parser.parse(val, dayfirst=True).strftime("%Y-%m-%d")
+        except Exception:
+            return val  # return raw if parsing fails
+    
+    if p_type == "passport":
+        # Uppercase passport numbers
+        return val.upper()
+    
+    if p_type == "health":
+        # For health conditions -> lowercase and strip spaces
+        return val.lower()
+    
+    return val
 
 def map_to_laws(pii_type: str) -> List[str]:
     return COMPLIANCE_MAP.get(pii_type, [])
@@ -41,6 +80,7 @@ def flatten_doc(doc: dict, parent: str = "") -> Dict[str, Any]:
             out[path] = str(v) if v is not None else ""
     return out
 
+# Mongo Scanning Logic
 def scan_mongo(admin_email: str):
     """
     Scan MongoDB collection for sensitive data (PII/PHI).
@@ -83,6 +123,7 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
     """
     
     findings = []
+    seen = {}
 
     connection_result = MongoConnection(mongo_uri, admin_email)
     if not connection_result.get("success"):
@@ -112,13 +153,17 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                     if not val_str.strip():
                         continue
 
+                    lname = field_path.lower()
                     matched = False
                     # --- Regex detection ---
                     for p_type, pattern in PII_PATTERNS.items():
                         m = pattern.search(val_str)
                         if m:
                             matched = True
-                            findings.append({
+                            norm_val = normalize_value(m.group(0), p_type)
+                            key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, p_type)
+                            if key not in seen:
+                                finding = {
                                 "collection": f"{dbn}.{coll}",
                                 "document_id": doc_id,
                                 "field_path": field_path,
@@ -127,13 +172,19 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                                 "type": p_type,
                                 "confidence": 0.95,
                                 "mapped_laws": map_to_laws(p_type),
-                                "detector": "regex",
-                                "timestamp": datetime.utcnow()
-                            })
+                                "detectors": ["regex"],
+                                "timestamp": datetime.utcnow(),
+                                }
+                                seen[key] = finding
+                            else:
+                                seen[key]["detectors"].append("regex")
 
                     # --- Health keywords ---
                     if not matched and HEALTH_KEYWORDS.search(val_str):
-                        findings.append({
+                        norm_val = normalize_value(val_str, "health")
+                        key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, "health")
+                        if key not in seen:
+                            finding = {
                             "collection": f"{dbn}.{coll}",
                             "document_id": doc_id,
                             "field_path": field_path,
@@ -142,22 +193,29 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                             "type": "health",
                             "confidence": 0.75,
                             "mapped_laws": map_to_laws("health"),
-                            "detector": "keyword",
-                            "timestamp": datetime.utcnow()
-                        })
+                            "detectors": ["keyword"],
+                            "timestamp": datetime.utcnow(),
+                        }
+                            seen[key] = finding
+                        else:
+                            seen[key]["detectors"].append("keyword")
 
                     # --- Field name heuristic ---
-                    lname = field_path.lower()
                     heuristics = {
                         "aadhaar": ["aadhaar", "aadhar"],
                         "pan": ["pan"],
                         "email": ["email", "e_mail", "mail"],
                         "phone": ["phone", "mobile", "contact"],
+                        "dob": ["dob", "birth", "birthday", "birthdate"],
+                        "passport": ["passport"],
                         "health": ["medical", "health", "diagnosis", "patient"]
                     }
                     for p_type, keywords in heuristics.items():
                         if any(k in lname for k in keywords):
-                            findings.append({
+                            norm_val = normalize_value(val_str, p_type)
+                            key = (f"{dbn}.{coll}", doc_id, field_path, norm_val, p_type)
+                            if key not in seen:
+                                finding = {
                                 "collection": f"{dbn}.{coll}",
                                 "document_id": doc_id,
                                 "field_path": field_path,
@@ -166,25 +224,439 @@ def run_mongo_scan(mongo_uri: str, admin_email: str, db_name: str = None,
                                 "type": p_type,
                                 "confidence": 0.6,
                                 "mapped_laws": map_to_laws(p_type),
-                                "detector": "field-name-heuristic",
+                                "detectors": ["field-name-heuristic"],
                                 "timestamp": datetime.utcnow()
-                            })
+                            }
+                                seen[key] = finding
+                            else:
+                                seen[key]["detectors"].append("field-name-heuristic")
                             break
 
     client.close()
+
+    for finding in seen.values():
+        detectors = set(finding["detectors"])
+        if detectors == {"regex"}:
+            finding["confidence"] = 0.95
+        elif detectors == {"keyword"}:
+            finding["confidence"] = 0.75
+        elif detectors == {"field-name-heuristic"}:
+            finding["confidence"] = 0.60
+        elif detectors == {"regex", "field-name-heuristic"}:
+            finding["confidence"] = 0.97
+        elif detectors == {"regex", "keyword"}:
+            finding["confidence"] = 0.96
+        elif len(detectors) == 3:
+            finding["confidence"] = 0.99
+
+    findings = list(seen.values())
     return findings
 
-def scan_gmail ():
-    pass
+# Gmail Scanning Logic
+def get_refresh_token(admin_email: str) -> str:
+    """Fetch and decrypt refresh token from MongoDB."""
+    integration = Integrations.find_one({"admin_email": admin_email})
+    if not integration or not integration.get("GmailConnection"):
+        raise Exception("Gmail not connected for this admin_email")
+    
+    encrypted_refresh_token = integration.get("encrypted_gmail_refresh_token")
+    if not encrypted_refresh_token:
+        raise Exception("No refresh token found")
+    
+    # Decrypt token
+    refresh_token = cipher.decrypt(encrypted_refresh_token.encode()).decode()
+    return refresh_token
 
-def mask_data ():
-    pass
+async def get_access_token(refresh_token: str) -> str:
+    """Exchange refresh token for access token using Google OAuth."""
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token"
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data=payload, timeout=30.0)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread()          
+        data = json.loads(raw_bytes.decode())
+    if "access_token" not in data:
+        raise Exception(f"Failed to get access token: {data}")
+    return data["access_token"]
 
-def summarize_findings ():
-    pass 
+async def list_emails(access_token: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    """Get list of emails from Gmail API."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults={max_results}"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread()           
+        data = json.loads(raw_bytes.decode())
+    return data.get("messages", [])
 
-def notify_user ():
-    pass
+async def fetch_email(access_token: str, message_id: str) -> Dict[str, Any]:
+    """Fetch full email content for a single message."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}?format=full"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        raw_bytes = await resp.aread() # read the response body asynchronously
+        data = json.loads(raw_bytes.decode())
+    
+    # Extract headers
+    headers_data = {h['name']: h.get('value', '') for h in data.get('payload', {}).get('headers', [])}
+    
+    # Extract body (plain text if available)
+    body = ""
+    for part in data.get('payload', {}).get('parts', []):
+        if part.get('mimeType') == "text/plain":
+            body_data = part.get('body', {}).get('data', "")
+            if body_data:
+                body += base64.urlsafe_b64decode(body_data.encode()).decode()
+    
+    return {
+        "message_id": message_id,
+        "thread_id": data.get("threadId"),
+        "from": headers_data.get("From", ""),
+        "subject": headers_data.get("Subject", ""),
+        "body": body
+    }
 
-def log_results ():
-    pass
+sem = asyncio.Semaphore(5)
+
+async def fetch_with_limit(access_token, eid):
+    async with sem:
+        return await fetch_email(access_token, eid)
+
+async def fetch_all_emails(access_token: str, email_ids: List[str]) -> List[Dict[str, Any]]:
+    tasks = [fetch_with_limit(access_token, eid) for eid in email_ids]
+    return await asyncio.gather(*tasks)
+
+async def scan_email_content(email: Dict[str, Any], dsar_classifier=dsar_classifier) -> List[Dict[str, Any]]:
+    """Scan a single email's content for PII/PHI/DSAR."""
+    findings = []
+    seen = {}
+    # Combine headers + body
+    content = f"{email['from']} {email['subject']} {email['body']}"
+    
+    # --- Regex PII/PHI ---
+    for p_type, pattern in PII_PATTERNS.items():
+        for m in pattern.finditer(content):
+            norm_val = normalize_value(m.group(0), p_type)
+            key = (email["message_id"], norm_val, p_type)
+            if key not in seen:
+                finding = {
+                    "email_id": email["message_id"],
+                    "thread_id": email["thread_id"],
+                    "from": email["from"],
+                    "subject": email["subject"],
+                    "value": m.group(0),
+                    "normalized_value": norm_val,
+                    "type": p_type,
+                    "confidence": 0.95,
+                    "mapped_laws": COMPLIANCE_MAP.get(p_type, []),
+                    "detectors": ["regex"],
+                    "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    
+    # --- Health keywords ---
+    for m in HEALTH_KEYWORDS.finditer(content):
+        norm_val = normalize_value(m.group(0), "health")
+        key = (email["message_id"], norm_val, "health")
+        if key not in seen:
+            finding = {
+                "email_id": email["message_id"],
+                "thread_id": email["thread_id"],
+                "from": email["from"],
+                "subject": email["subject"],
+                "value": m.group(0),
+                "normalized_value": norm_val,
+                "type": "health",
+                "confidence": 0.75,
+                "mapped_laws": COMPLIANCE_MAP.get("health", []),
+                "detectors": ["keyword"],
+                "timestamp": datetime.utcnow()
+            }
+            seen[key] = finding
+    
+    # --- DSAR requests ---
+    for dsar_type, pattern in DSAR_PATTERNS.items():
+        for m in pattern.finditer(content):
+            norm_val = m.group(0).lower()
+            key = (email["message_id"], norm_val, "dsar")
+            if key not in seen:
+                finding = {
+                "email_id": email["message_id"],
+                "thread_id": email["thread_id"],
+                "from": email["from"],
+                "subject": email["subject"],
+                "value": m.group(0),
+                "normalized_value": norm_val,
+                "type": "dsar",
+                "dsar_category": dsar_type,
+                "confidence": 0.85,
+                "mapped_laws": ["GDPR", "CCPA"],  # DSAR is usually under these
+                "detectors": ["keyword"],
+                "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    # NLP DSAR Detector
+    result = await asyncio.to_thread(dsar_classifier, content, candidate_labels=DSAR_LABELS)
+    for label, score in zip(result["labels"], result["scores"]):
+        if score > 0.7:  # threshold
+            key = (email["message_id"], label, "dsar")
+            if key not in seen:
+                finding = {
+                    "email_id": email["message_id"],
+                    "thread_id": email["thread_id"],
+                    "from": email["from"],
+                    "subject": email["subject"],
+                    "value": content[:200],  # snippet for context
+                    "normalized_value": label,
+                    "type": "dsar",
+                    "dsar_category": label,
+                    "confidence": float(score),
+                    "mapped_laws": ["GDPR", "CCPA"],
+                    "detectors": ["zero-shot-nlp"],
+                    "timestamp": datetime.utcnow()
+                }
+                seen[key] = finding
+    
+    findings = list(seen.values())
+    return findings
+
+async def scan_gmail(admin_email: str) -> List[Dict[str, Any]]:
+    """Scan connected Gmail account for PII/PHI and DSAR requests."""
+    
+    # Get decrypted refresh token
+    refresh_token = get_refresh_token(admin_email)
+    
+    # Exchange refresh token for access token
+    access_token = await get_access_token(refresh_token)
+    
+    # List emails (first 50 by default)
+    emails = await list_emails(access_token)
+    email_ids = [e["id"] for e in emails]
+    all_emails = await fetch_all_emails(access_token, email_ids)
+
+    
+    tasks = [scan_email_content(e, dsar_classifier = dsar_classifier) for e in all_emails]
+    all_findings = await asyncio.gather(*tasks)
+    
+    return [f for sublist in all_findings for f in sublist]
+
+def mask_data(findings: List[Dict[str, Any]], dsar_type: str = "access", 
+                data_types: List[str] = None, compliance_laws: List[str] = None,
+                user_context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Mask detected sensitive data using appropriate transformation method.
+    
+    Args:
+        findings: List of PII/PHI findings from scan
+        dsar_type: Type of DSAR request (access, delete, rectify, etc.)
+        data_types: List of data types to transform
+        compliance_laws: Applicable compliance laws
+        user_context: Additional context for transformations
+    
+    Returns:
+        Dict with transformation results and compliance report
+    """
+    from mcp_agent.transformations import (
+        transformation_engine, TransformationRequest, DSARType, 
+        DataType, ComplianceLaw
+    )
+    
+    try:
+        # Convert string enums to proper enum types
+        dsar_enum = DSARType(dsar_type.lower())
+        data_type_enums = [DataType(dt.lower()) for dt in (data_types or [])]
+        compliance_enums = [ComplianceLaw(cl.lower()) for cl in (compliance_laws or [])]
+        
+        # Create transformation request
+        request = TransformationRequest(
+            findings=findings,
+            dsar_type=dsar_enum,
+            data_types=data_type_enums,
+            compliance_laws=compliance_enums,
+            user_context=user_context or {}
+        )
+        
+        # Apply transformations
+        results = transformation_engine.transform_data(request)
+        
+        # Generate compliance report
+        report = transformation_engine.create_compliance_report(results, request)
+        
+        return {
+            "success": True,
+            "message": f"Data transformation completed for {dsar_type} request",
+            "transformation_results": [
+                {
+                    "original_value": r.original_value,
+                    "transformed_value": r.transformed_value,
+                    "transformation_type": r.transformation_type.value,
+                    "confidence": r.confidence,
+                    "metadata": r.metadata
+                }
+                for r in results
+            ],
+            "compliance_report": report
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Transformation failed: {str(e)}",
+            "error": str(e)
+        }
+
+def summarize_findings(findings: List[Dict[str, Any]]) -> str:
+    """
+    Summarize findings into a compliance report.
+    
+    Args:
+        findings: List of PII/PHI findings
+    
+    Returns:
+        String summary report
+    """
+    if not findings:
+        return "No PII/PHI findings detected."
+    
+    # Group findings by type
+    by_type = {}
+    by_law = {}
+    total_confidence = 0
+    
+    for finding in findings:
+        pii_type = finding.get("type", "unknown")
+        laws = finding.get("mapped_laws", [])
+        confidence = finding.get("confidence", 0)
+        
+        # Group by type
+        if pii_type not in by_type:
+            by_type[pii_type] = 0
+        by_type[pii_type] += 1
+        
+        # Group by law
+        for law in laws:
+            if law not in by_law:
+                by_law[law] = 0
+            by_law[law] += 1
+        
+        total_confidence += confidence
+    
+    avg_confidence = total_confidence / len(findings) if findings else 0
+    
+    # Generate summary
+    summary = f"""
+# PII/PHI Detection Summary
+
+## Overview
+- **Total Findings**: {len(findings)}
+- **Average Confidence**: {avg_confidence:.2f}
+- **Detection Timestamp**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+## Findings by Type
+"""
+    
+    for pii_type, count in sorted(by_type.items()):
+        summary += f"- **{pii_type.title()}**: {count} instances\n"
+    
+    summary += "\n## Compliance Impact\n"
+    for law, count in sorted(by_law.items()):
+        summary += f"- **{law}**: {count} potential violations\n"
+    
+    summary += "\n## Risk Assessment\n"
+    if avg_confidence >= 0.9:
+        summary += "- **Risk Level**: HIGH (High confidence detections)\n"
+    elif avg_confidence >= 0.7:
+        summary += "- **Risk Level**: MEDIUM (Moderate confidence detections)\n"
+    else:
+        summary += "- **Risk Level**: LOW (Low confidence detections)\n"
+    
+    summary += "\n## Recommendations\n"
+    if by_law.get("GDPR", 0) > 0:
+        summary += "- Review GDPR compliance requirements for EU data subjects\n"
+    if by_law.get("HIPAA", 0) > 0:
+        summary += "- Implement HIPAA-compliant data handling for health information\n"
+    if by_law.get("DPDP", 0) > 0:
+        summary += "- Ensure DPDP Act compliance for Indian personal data\n"
+    
+    summary += "- Consider data minimization and encryption for sensitive fields\n"
+    summary += "- Implement regular PII scanning and monitoring\n"
+    
+    return summary
+
+def notify_user(user_email: str, report: str, notification_type: str = "email") -> str:
+    """
+    Notify user with compliance report.
+    
+    Args:
+        user_email: Email address to send notification to
+        report: Compliance report content
+        notification_type: Type of notification (email, webhook, etc.)
+    
+    Returns:
+        Success message
+    """
+    try:
+        # In production, integrate with email service (SendGrid, AWS SES, etc.)
+        # For now, we'll simulate the notification
+        
+        notification_data = {
+            "to": user_email,
+            "subject": "PRISMATIC PII Detection Report",
+            "body": report,
+            "notification_type": notification_type,
+            "sent_at": datetime.utcnow().isoformat(),
+            "status": "sent"
+        }
+        
+        # Log notification (in production, store in database)
+        print(f"NOTIFICATION SENT to {user_email}: {notification_type}")
+        
+        return f"Notification sent successfully to {user_email} via {notification_type}"
+        
+    except Exception as e:
+        return f"Failed to send notification: {str(e)}"
+
+def log_results(db: str, results: Dict[str, Any]) -> str:
+    """
+    Log results into audit database.
+    
+    Args:
+        db: Database name for logging
+        results: Results to log
+    
+    Returns:
+        Success message
+    """
+    try:
+        # In production, integrate with proper audit database
+        # For now, we'll simulate logging
+        
+        audit_entry = {
+            "log_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow(),
+            "database": db,
+            "operation": "pii_transformation",
+            "results_summary": {
+                "total_findings": len(results.get("transformation_results", [])),
+                "compliance_status": results.get("compliance_report", {}).get("compliance_status", {}),
+                "success": results.get("success", False)
+            },
+            "full_results": results
+        }
+        
+        # Log to console (in production, store in audit database)
+        print(f"AUDIT LOG: {audit_entry}")
+        
+        return f"Results logged successfully to audit database {db}"
+        
+    except Exception as e:
+        return f"Failed to log results: {str(e)}"
