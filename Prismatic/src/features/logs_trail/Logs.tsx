@@ -14,7 +14,7 @@ type LogRow = {
   result: 'Success' | 'Warning' | 'Error'
 }
 
-const ACTIONS = ['Login', 'Scan Started', 'Scan Completed', 'Integration Connected', 'DSAR Processed']
+const ACTIONS = ['Scan Started', 'Scan Completed', 'Integration Connected', 'DSAR Request Completed']
 const SYSTEMS = ['Web', 'Worker', 'API']
 
 function seed(): LogRow[] {
