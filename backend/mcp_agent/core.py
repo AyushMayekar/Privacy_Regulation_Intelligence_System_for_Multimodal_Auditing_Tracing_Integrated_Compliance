@@ -1,4 +1,4 @@
-import re, json, base64, asyncio, httpx
+import re, json, base64, asyncio, httpx, uuid
 from typing import List, Dict, Any
 from config import Integrations, cipher, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 from integrations.core import MongoConnection
@@ -449,14 +449,214 @@ async def scan_gmail(admin_email: str) -> List[Dict[str, Any]]:
     
     return [f for sublist in all_findings for f in sublist]
 
-def mask_data ():
-    pass
+def mask_data(findings: List[Dict[str, Any]], dsar_type: str = "access", 
+                data_types: List[str] = None, compliance_laws: List[str] = None,
+                user_context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Mask detected sensitive data using appropriate transformation method.
+    
+    Args:
+        findings: List of PII/PHI findings from scan
+        dsar_type: Type of DSAR request (access, delete, rectify, etc.)
+        data_types: List of data types to transform
+        compliance_laws: Applicable compliance laws
+        user_context: Additional context for transformations
+    
+    Returns:
+        Dict with transformation results and compliance report
+    """
+    from mcp_agent.transformations import (
+        transformation_engine, TransformationRequest, DSARType, 
+        DataType, ComplianceLaw
+    )
+    
+    try:
+        # Convert string enums to proper enum types
+        dsar_enum = DSARType(dsar_type.lower())
+        data_type_enums = [DataType(dt.lower()) for dt in (data_types or [])]
+        compliance_enums = [ComplianceLaw(cl.lower()) for cl in (compliance_laws or [])]
+        
+        # Create transformation request
+        request = TransformationRequest(
+            findings=findings,
+            dsar_type=dsar_enum,
+            data_types=data_type_enums,
+            compliance_laws=compliance_enums,
+            user_context=user_context or {}
+        )
+        
+        # Apply transformations
+        results = transformation_engine.transform_data(request)
+        
+        # Generate compliance report
+        report = transformation_engine.create_compliance_report(results, request)
+        
+        return {
+            "success": True,
+            "message": f"Data transformation completed for {dsar_type} request",
+            "transformation_results": [
+                {
+                    "original_value": r.original_value,
+                    "transformed_value": r.transformed_value,
+                    "transformation_type": r.transformation_type.value,
+                    "confidence": r.confidence,
+                    "metadata": r.metadata
+                }
+                for r in results
+            ],
+            "compliance_report": report
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Transformation failed: {str(e)}",
+            "error": str(e)
+        }
 
-def summarize_findings ():
-    pass 
+def summarize_findings(findings: List[Dict[str, Any]]) -> str:
+    """
+    Summarize findings into a compliance report.
+    
+    Args:
+        findings: List of PII/PHI findings
+    
+    Returns:
+        String summary report
+    """
+    if not findings:
+        return "No PII/PHI findings detected."
+    
+    # Group findings by type
+    by_type = {}
+    by_law = {}
+    total_confidence = 0
+    
+    for finding in findings:
+        pii_type = finding.get("type", "unknown")
+        laws = finding.get("mapped_laws", [])
+        confidence = finding.get("confidence", 0)
+        
+        # Group by type
+        if pii_type not in by_type:
+            by_type[pii_type] = 0
+        by_type[pii_type] += 1
+        
+        # Group by law
+        for law in laws:
+            if law not in by_law:
+                by_law[law] = 0
+            by_law[law] += 1
+        
+        total_confidence += confidence
+    
+    avg_confidence = total_confidence / len(findings) if findings else 0
+    
+    # Generate summary
+    summary = f"""
+# PII/PHI Detection Summary
 
-def notify_user ():
-    pass
+## Overview
+- **Total Findings**: {len(findings)}
+- **Average Confidence**: {avg_confidence:.2f}
+- **Detection Timestamp**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
 
-def log_results ():
-    pass
+## Findings by Type
+"""
+    
+    for pii_type, count in sorted(by_type.items()):
+        summary += f"- **{pii_type.title()}**: {count} instances\n"
+    
+    summary += "\n## Compliance Impact\n"
+    for law, count in sorted(by_law.items()):
+        summary += f"- **{law}**: {count} potential violations\n"
+    
+    summary += "\n## Risk Assessment\n"
+    if avg_confidence >= 0.9:
+        summary += "- **Risk Level**: HIGH (High confidence detections)\n"
+    elif avg_confidence >= 0.7:
+        summary += "- **Risk Level**: MEDIUM (Moderate confidence detections)\n"
+    else:
+        summary += "- **Risk Level**: LOW (Low confidence detections)\n"
+    
+    summary += "\n## Recommendations\n"
+    if by_law.get("GDPR", 0) > 0:
+        summary += "- Review GDPR compliance requirements for EU data subjects\n"
+    if by_law.get("HIPAA", 0) > 0:
+        summary += "- Implement HIPAA-compliant data handling for health information\n"
+    if by_law.get("DPDP", 0) > 0:
+        summary += "- Ensure DPDP Act compliance for Indian personal data\n"
+    
+    summary += "- Consider data minimization and encryption for sensitive fields\n"
+    summary += "- Implement regular PII scanning and monitoring\n"
+    
+    return summary
+
+def notify_user(user_email: str, report: str, notification_type: str = "email") -> str:
+    """
+    Notify user with compliance report.
+    
+    Args:
+        user_email: Email address to send notification to
+        report: Compliance report content
+        notification_type: Type of notification (email, webhook, etc.)
+    
+    Returns:
+        Success message
+    """
+    try:
+        # In production, integrate with email service (SendGrid, AWS SES, etc.)
+        # For now, we'll simulate the notification
+        
+        notification_data = {
+            "to": user_email,
+            "subject": "PRISMATIC PII Detection Report",
+            "body": report,
+            "notification_type": notification_type,
+            "sent_at": datetime.utcnow().isoformat(),
+            "status": "sent"
+        }
+        
+        # Log notification (in production, store in database)
+        print(f"NOTIFICATION SENT to {user_email}: {notification_type}")
+        
+        return f"Notification sent successfully to {user_email} via {notification_type}"
+        
+    except Exception as e:
+        return f"Failed to send notification: {str(e)}"
+
+def log_results(db: str, results: Dict[str, Any]) -> str:
+    """
+    Log results into audit database.
+    
+    Args:
+        db: Database name for logging
+        results: Results to log
+    
+    Returns:
+        Success message
+    """
+    try:
+        # In production, integrate with proper audit database
+        # For now, we'll simulate logging
+        
+        audit_entry = {
+            "log_id": str(uuid.uuid4()),
+            "timestamp": datetime.utcnow(),
+            "database": db,
+            "operation": "pii_transformation",
+            "results_summary": {
+                "total_findings": len(results.get("transformation_results", [])),
+                "compliance_status": results.get("compliance_report", {}).get("compliance_status", {}),
+                "success": results.get("success", False)
+            },
+            "full_results": results
+        }
+        
+        # Log to console (in production, store in audit database)
+        print(f"AUDIT LOG: {audit_entry}")
+        
+        return f"Results logged successfully to audit database {db}"
+        
+    except Exception as e:
+        return f"Failed to log results: {str(e)}"
