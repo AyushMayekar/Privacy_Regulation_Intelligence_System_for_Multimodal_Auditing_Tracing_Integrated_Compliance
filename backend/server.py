@@ -1,6 +1,6 @@
 from mcp.server.fastmcp import FastMCP
-from mcp_agent.core import scan_mongo, scan_gmail, mask_data, summarize_findings, notify_user, log_results
-from mcp_agent.transformations import transformation_engine, DSARType, DataType, ComplianceLaw
+from transformation_and_enforcement.core import scan_mongo, scan_gmail, mask_data, summarize_findings, notify_user, log_results
+from transformation_and_enforcement.transformations import transformation_engine, DSARType, DataType, ComplianceLaw
 
 app = FastMCP("prismatic-mcp")
 

@@ -1,6 +1,6 @@
 from pymongo import MongoClient
 from bson import ObjectId
-from mcp_agent.transformations import TransformationType, DSARType
+from transformation_and_enforcement.transformations import TransformationType, DSARType
 from config import Integrations, cipher
 
 def is_enforcement_allowed(dsar_type: DSARType) -> bool: 

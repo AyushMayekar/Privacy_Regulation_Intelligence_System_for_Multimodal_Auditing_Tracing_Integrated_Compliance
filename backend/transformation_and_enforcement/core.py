@@ -5,10 +5,10 @@ from integrations.core import MongoConnection
 from datetime import datetime
 from pymongo import MongoClient
 from dateutil import parser
-from mcp_agent.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
-from mcp_agent.policy_engine import resolve, DSARContext, resolve_dsar
-from mcp_agent.transformations import transformation_engine, DSARType
-from mcp_agent.enforcement_engine import MongoEnforcer, is_enforcement_allowed
+from transformation_and_enforcement.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
+from transformation_and_enforcement.policy_engine import resolve, DSARContext, resolve_dsar
+from transformation_and_enforcement.transformations import transformation_engine, DSARType
+from transformation_and_enforcement.enforcement_engine import MongoEnforcer, is_enforcement_allowed
 from transformers import pipeline
 import logging
 
