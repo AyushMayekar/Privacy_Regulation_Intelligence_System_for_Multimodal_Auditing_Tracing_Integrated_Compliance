@@ -8,6 +8,7 @@ from dateutil import parser
 from mcp_agent.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
 from mcp_agent.policy_engine import resolve, DSARContext, resolve_dsar
 from mcp_agent.transformations import transformation_engine, DSARType
+from mcp_agent.enforcement_engine import MongoEnforcer, is_enforcement_allowed
 from transformers import pipeline
 import logging
 
@@ -572,6 +573,13 @@ def mask_data(admin_email, findings: List[Dict[str, Any]]) -> Dict[str, Any]:
                         request=None
                     )
                 )
+                
+                if is_enforcement_allowed(dsar_type = DSARType(decision.finding.get("dsar_type"))):
+                    MongoEnforcer.apply(
+                        admin_email=admin_email,
+                        decision=decision,
+                        transformed_value=transformed_value
+                    )
 
                 metadata.update({
                     "decision_reason": decision.reason,
