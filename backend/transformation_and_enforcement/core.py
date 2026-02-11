@@ -1,19 +1,25 @@
 import re, json, base64, asyncio, httpx, uuid
+import logging
+import smtplib
 from typing import List, Dict, Any
-from config import Integrations, cipher, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+from config import Integrations, cipher, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SMTP_GMAIL_APP_PASSWORD, SENDER_EMAIL
 from integrations.core import MongoConnection
 from datetime import datetime
 from pymongo import MongoClient
 from dateutil import parser
+from email.utils import parseaddr
+from datetime import datetime
+from dotenv import load_dotenv
 from transformation_and_enforcement.patterns import COMPLIANCE_MAP, DSAR_PATTERNS, HEALTH_KEYWORDS, PII_PATTERNS, DSAR_LABELS
 from transformation_and_enforcement.policy_engine import resolve, DSARContext, resolve_dsar
 from transformation_and_enforcement.transformations import transformation_engine, DSARType
 from transformation_and_enforcement.enforcement_engine import MongoEnforcer, is_enforcement_allowed
 from transformers import pipeline
-import logging
+from email.message import EmailMessage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+load_dotenv()
 
 dsar_classifier = pipeline(
             "zero-shot-classification", 
@@ -377,6 +383,17 @@ async def fetch_email(access_token: str, message_id: str) -> Dict[str, Any]:
         "body": body
     }
 
+def extract_email_from_from_field(from_field: str) -> str:
+    """
+    Extracts a clean email address from a Gmail 'From' header.
+    Returns empty string if not found.
+    """
+    if not from_field:
+        return ""
+
+    name, email = parseaddr(from_field)
+    return email.lower().strip()
+
 sem = asyncio.Semaphore(5)
 
 async def fetch_with_limit(access_token, eid):
@@ -597,6 +614,24 @@ def mask_data(admin_email, findings: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "confidence": confidence,
                     "metadata": metadata
                 })
+# Send DSAR access emails with results
+            for context in dsar_contexts:
+                if context.dsar_type != "access":
+                    continue
+
+                dsar_results = [
+                    r for r in results
+                    if r.get("metadata", {}).get("dsar_id") == context.dsar_id
+                ]
+
+                if not dsar_results:
+                    continue
+
+                send_dsar_access_email(
+                    requester_email=context.requester_email,
+                    dsar_id=context.dsar_id,
+                    results=dsar_results
+                )
 
         return {
             "success": True,
@@ -621,6 +656,7 @@ def extract_dsar_contexts(gmail_findings):
 
         context = DSARContext(
             subject_identifier = f.get("normalized_value") or f.get("value"),
+            requester_email=extract_email_from_from_field(f.get("from")),
             dsar_type=DSARType(f.get("dsar_category")),
             source="gmail",
             mapped_laws=f.get("mapped_laws", [])
@@ -628,6 +664,58 @@ def extract_dsar_contexts(gmail_findings):
 
         dsar_contexts.append(context)
     return dsar_contexts
+
+# Send Emails Logic (Responding to DSARs)
+def send_dsar_access_email(requester_email: str, dsar_id: str, results: list):
+    payload = {
+        "dsar_id": dsar_id,
+        "record_count": len(results),
+        "data": [
+            {
+                "transformed_value": r["transformed_value"],
+                "pii_type": r["metadata"].get("pii_type"),
+                "confidence": r.get("confidence")
+            }
+            for r in results
+        ]
+    }
+
+    payload_bytes = json.dumps(payload, indent=2).encode("utf-8")
+
+    send_email_with_attachment(
+        to_email=requester_email,
+        subject="Your Data Access Request (DSAR)",
+        body="Attached is your requested personal data.",
+        attachment_bytes=payload_bytes,
+        filename=f"dsar-access-{dsar_id}.json"
+    )
+
+def send_email_with_attachment(
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_bytes: bytes,
+    filename: str
+):
+    sender_email = SENDER_EMAIL
+    smtp_gmail_app_password = SMTP_GMAIL_APP_PASSWORD
+    msg = EmailMessage()
+    msg["To"] = to_email
+    msg["From"] = sender_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    msg.add_attachment(
+        attachment_bytes,
+        maintype="application",
+        subtype="json",
+        filename=filename
+    )
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender_email, smtp_gmail_app_password)
+        server.send_message(msg)
 
 def summarize_findings(findings: List[Dict[str, Any]]) -> str:
     """

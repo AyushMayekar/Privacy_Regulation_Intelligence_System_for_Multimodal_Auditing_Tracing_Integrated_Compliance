@@ -27,3 +27,7 @@ SCOPES = "https://www.googleapis.com/auth/gmail.readonly"
 
 # Encription Setup
 cipher = Fernet(Fernet_Key.encode())
+
+# Email Setup
+SMTP_GMAIL_APP_PASSWORD = os.getenv("SMTP_GMAIL_APP_PASSWORD")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")

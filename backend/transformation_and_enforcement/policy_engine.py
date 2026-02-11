@@ -14,13 +14,15 @@ class DSARStatus(str, Enum):
 class DSARContext:
     def __init__(
         self,
-        subject_identifier: str,   
+        subject_identifier: str,
+        requester_email: str,
         dsar_type: DSARType,        
         source: str,          
         mapped_laws: List[str],
     ):
         self.dsar_id = str(uuid.uuid4())
         self.subject_identifier = subject_identifier
+        self.requester_email = requester_email
         self.dsar_type = dsar_type
         self.mapped_laws = mapped_laws
         self.source = source
