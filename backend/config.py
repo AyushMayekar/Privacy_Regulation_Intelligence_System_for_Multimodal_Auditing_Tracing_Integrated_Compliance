@@ -19,6 +19,9 @@ DB = Client['PRISMATIC']
 Users = DB['USERS']
 Audits = DB['Audits']
 Integrations = DB['Integrations']
+# Indexes
+Audits.create_index([("admin", 1), ("ts", -1)])
+Audits.create_index([("dsar_id", 1)])
 
 # google oauth (integrations)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

@@ -1,7 +1,8 @@
 from mcp.server.fastmcp import FastMCP
 from typing import List, Dict, Any
 from transformation_and_enforcement.core import scan_mongo, scan_gmail, mask_data
-from auditing_and_reporting.core import extract_and_store
+from auditing_and_reporting.core import extract_and_store, retrieve_audits
+from auditing_and_reporting.data_schema import AuditQuery
 
 app = FastMCP("prismatic-mcp")
 
@@ -28,6 +29,11 @@ def audit_report(results: List[Dict[str, Any]],
     admin_email: str) -> None:
     """Log results into audit DB."""
     return extract_and_store(results, admin_email)
+
+@app.tool()
+async def get_audit_logs(query: AuditQuery) -> List[Dict[str, Any]]:
+    """Retrieve audit logs with optional filters."""
+    return retrieve_audits(query)
 
 if __name__ == "__main__":
     app.run()
