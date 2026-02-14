@@ -17,6 +17,7 @@ Client = MongoClient(os.getenv('MONGODB'))
 DB = Client['PRISMATIC']
 # Collections
 Users = DB['USERS']
+Audits = DB['Audits']
 Integrations = DB['Integrations']
 
 # google oauth (integrations)
