@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from transformation_and_enforcement.core import scan_mongo, scan_gmail, mask_data
 from auditing_and_reporting.core import extract_and_store, retrieve_audits
 from auditing_and_reporting.data_schema import AuditQuery
+from langgraph_Orchestration.core import run_dsar_access_workflow
 
 app = FastMCP("prismatic-mcp")
 
@@ -22,6 +23,13 @@ async def gmail_scan(user_email: str) -> dict:
 def transform_data(admin_email: str, findings: list) -> dict:
     """Apply data transformations based on findings."""
     return mask_data(admin_email, findings)
+
+
+@app.tool()
+def run_dsar_workflow(admin_email: str, findings: list) -> dict:
+    """ Execute DSAR Access workflow using LangGraph orchestration."""
+    return run_dsar_access_workflow(admin_email, findings)
+
 
 # --- Auditing and Reporting Tools ---
 @app.tool()
