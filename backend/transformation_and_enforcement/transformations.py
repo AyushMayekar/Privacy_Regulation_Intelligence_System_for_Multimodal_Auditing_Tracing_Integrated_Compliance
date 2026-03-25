@@ -1,19 +1,11 @@
-"""
-Data Transformation Engine for MCP Agent
-Handles all 13 transformation types for DSAR compliance and data protection
-"""
-
 import hashlib
-import secrets
 import base64
 import json
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any
 from enum import Enum
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import uuid
 import random
 
@@ -47,12 +39,58 @@ class DSARType(str, Enum):
 
 class DataType(str, Enum):
     """Data categories for transformation rules"""
-    IDENTIFIERS = "identifiers"  # Name, Email, Phone, SSN
-    FINANCIAL = "financial"      # Credit Card, IBAN, Bank details
-    HEALTH = "health"           # PHI, medical records
-    LOCATION = "location"       # Address, GPS coordinates
-    BEHAVIORAL = "behavioral"   # Cookies, logs, metadata
-    BIOMETRIC = "biometric"     # Fingerprint, facial recognition
+    IDENTIFIERS = "identifiers"  
+    FINANCIAL = "financial"      
+    HEALTH = "health"           
+    LOCATION = "location"       
+    BEHAVIORAL = "behavioral"   
+    BIOMETRIC = "biometric"     
+
+DSAR_POLICY_MAP = {
+    DSARType.ACCESS: {
+        DataType.IDENTIFIERS: TransformationType.MASKING_DYNAMIC,
+        DataType.FINANCIAL: TransformationType.MASKING_DYNAMIC,
+        DataType.HEALTH: TransformationType.PSEUDONYMIZATION,
+        DataType.LOCATION: TransformationType.AGGREGATION,
+        DataType.BEHAVIORAL: TransformationType.HASHING,
+        DataType.BIOMETRIC: TransformationType.PSEUDONYMIZATION,
+    },
+
+    DSARType.DELETE: {
+        DataType.IDENTIFIERS: TransformationType.DATA_DELETION_HARD,
+        DataType.FINANCIAL: TransformationType.DATA_DELETION_HARD,
+        DataType.HEALTH: TransformationType.ANONYMIZATION,
+        DataType.LOCATION: TransformationType.DATA_DELETION_HARD,
+        DataType.BEHAVIORAL: TransformationType.DATA_DELETION_HARD,
+        DataType.BIOMETRIC: TransformationType.DATA_DELETION_HARD,
+    },
+
+    DSARType.RECTIFY: {
+        DataType.IDENTIFIERS: TransformationType.DATA_RECTIFICATION,
+        DataType.FINANCIAL: TransformationType.DATA_RECTIFICATION,
+        DataType.HEALTH: TransformationType.DATA_RECTIFICATION,
+        DataType.LOCATION: TransformationType.DATA_RECTIFICATION,
+    },
+
+    DSARType.RESTRICT_PROCESSING: {
+        DataType.IDENTIFIERS: TransformationType.ENCRYPTION_RANDOMIZED,
+        DataType.FINANCIAL: TransformationType.ENCRYPTION_RANDOMIZED,
+        DataType.HEALTH: TransformationType.PSEUDONYMIZATION,
+        DataType.BEHAVIORAL: TransformationType.ENCRYPTION_RANDOMIZED,
+    },
+
+    DSARType.PORTABILITY: {
+        DataType.IDENTIFIERS: TransformationType.DATA_PORTABILITY,
+        DataType.FINANCIAL: TransformationType.DATA_PORTABILITY,
+        DataType.HEALTH: TransformationType.DATA_PORTABILITY,
+        DataType.LOCATION: TransformationType.DATA_PORTABILITY,
+    },
+
+    DSARType.OBJECT_TO_PROCESSING: {
+        DataType.BEHAVIORAL: TransformationType.SUPPRESSION,
+        DataType.IDENTIFIERS: TransformationType.SUPPRESSION,
+    }
+}
 
 class ComplianceLaw(str, Enum):
     """Applicable compliance laws"""
@@ -62,18 +100,30 @@ class ComplianceLaw(str, Enum):
     HIPAA = "hipaa"
     PCI_DSS = "pci_dss"
 
+LAW_OVERRIDES = {
+    ComplianceLaw.GDPR: {
+        DSARType.DELETE: TransformationType.DATA_DELETION_HARD
+    },
+
+    ComplianceLaw.HIPAA: {
+        DataType.HEALTH: TransformationType.ANONYMIZATION
+    },
+
+    ComplianceLaw.PCI_DSS: {
+        DataType.FINANCIAL: TransformationType.TOKENIZATION
+    }
+}
+
 class TransformationRequest:
     """Request for data transformation"""
     def __init__(self, 
-                 findings: List[Dict[str, Any]], 
-                 dsar_type: DSARType,
-                 data_types: List[DataType] = None,
-                 compliance_laws: List[ComplianceLaw] = None,
-                 user_context: Dict[str, Any] = None):
+                findings: List[Dict[str, Any]], 
+                dsar_type: DSARType,
+                data_types: List[DataType] = None,
+                user_context: Dict[str, Any] = None):
         self.findings = findings
         self.dsar_type = dsar_type
         self.data_types = data_types or []
-        self.compliance_laws = compliance_laws or []
         self.user_context = user_context or {}
         self.timestamp = datetime.utcnow()
 
@@ -93,68 +143,9 @@ class TransformationResult:
         self.timestamp = datetime.utcnow()
 
 class DataTransformationEngine:
-    """Main transformation engine for PII/PHI data"""
-    
     def __init__(self):
         # Initialize encryption keys (in production, use proper key management)
         self._init_encryption_keys()
-        
-        # DSAR to transformation mapping
-        self.dsar_transformation_map = {
-            DSARType.ACCESS: {
-                DataType.IDENTIFIERS: [TransformationType.MASKING_DYNAMIC, TransformationType.SUPPRESSION],
-                DataType.FINANCIAL: [TransformationType.MASKING_DYNAMIC, TransformationType.TOKENIZATION],
-                DataType.HEALTH: [TransformationType.PSEUDONYMIZATION, TransformationType.AGGREGATION],
-                DataType.LOCATION: [TransformationType.AGGREGATION, TransformationType.SUPPRESSION],
-                DataType.BEHAVIORAL: [TransformationType.HASHING, TransformationType.SUPPRESSION]
-            },
-            DSARType.DELETE: {
-                DataType.IDENTIFIERS: [TransformationType.DATA_DELETION_HARD],
-                DataType.FINANCIAL: [TransformationType.DATA_DELETION_SOFT, TransformationType.ANONYMIZATION],
-                DataType.HEALTH: [TransformationType.ANONYMIZATION, TransformationType.DATA_DELETION_HARD],
-                DataType.BEHAVIORAL: [TransformationType.DATA_DELETION_HARD]
-            },
-            DSARType.RECTIFY: {
-                DataType.IDENTIFIERS: [TransformationType.DATA_RECTIFICATION],
-                DataType.FINANCIAL: [TransformationType.DATA_RECTIFICATION],
-                DataType.HEALTH: [TransformationType.DATA_RECTIFICATION],
-                DataType.LOCATION: [TransformationType.DATA_RECTIFICATION]
-            },
-            DSARType.RESTRICT_PROCESSING: {
-                DataType.IDENTIFIERS: [TransformationType.ENCRYPTION_RANDOMIZED, TransformationType.TOKENIZATION],
-                DataType.FINANCIAL: [TransformationType.ENCRYPTION_RANDOMIZED, TransformationType.TOKENIZATION],
-                DataType.HEALTH: [TransformationType.ENCRYPTION_RANDOMIZED, TransformationType.PSEUDONYMIZATION],
-                DataType.BEHAVIORAL: [TransformationType.ENCRYPTION_RANDOMIZED]
-            },
-            DSARType.PORTABILITY: {
-                DataType.IDENTIFIERS: [TransformationType.DATA_PORTABILITY, TransformationType.MASKING_STATIC],
-                DataType.FINANCIAL: [TransformationType.DATA_PORTABILITY, TransformationType.MASKING_DYNAMIC],
-                DataType.HEALTH: [TransformationType.DATA_PORTABILITY, TransformationType.PSEUDONYMIZATION],
-                DataType.LOCATION: [TransformationType.DATA_PORTABILITY, TransformationType.AGGREGATION]
-            },
-            DSARType.OBJECT_TO_PROCESSING: {
-                DataType.BEHAVIORAL: [TransformationType.SUPPRESSION, TransformationType.HASHING],
-                DataType.IDENTIFIERS: [TransformationType.SUPPRESSION, TransformationType.ENCRYPTION_RANDOMIZED]
-            }
-        }
-        
-        # PII type to data type mapping
-        self.pii_to_data_type = {
-            "aadhaar": DataType.IDENTIFIERS,
-            "pan": DataType.FINANCIAL,
-            "email": DataType.IDENTIFIERS,
-            "phone": DataType.IDENTIFIERS,
-            "name": DataType.IDENTIFIERS,
-            "address": DataType.LOCATION,
-            "dob": DataType.IDENTIFIERS,
-            "health": DataType.HEALTH,
-            "financial_info": DataType.FINANCIAL,
-            "credit_card": DataType.FINANCIAL,
-            "ssn": DataType.IDENTIFIERS,
-            "passport": DataType.IDENTIFIERS,
-            "ip_address": DataType.BEHAVIORAL,
-            "biometric": DataType.BIOMETRIC
-        }
 
     def _init_encryption_keys(self):
         """Initialize encryption keys for deterministic and randomized encryption"""
@@ -167,38 +158,16 @@ class DataTransformationEngine:
         # Pseudonymization mapping (in production, use secure database)
         self.pseudonym_map = {}
 
-    def transform_data(self, request: TransformationRequest) -> List[TransformationResult]:
-        """Main transformation method"""
-        results = []
-        
-        for finding in request.findings:
-            pii_type = finding.get("type", "")
-            data_type = self.pii_to_data_type.get(pii_type, DataType.IDENTIFIERS)
-            
-            # Get applicable transformations for this DSAR type and data type
-            applicable_transformations = self.dsar_transformation_map.get(
-                request.dsar_type, {}
-            ).get(data_type, [TransformationType.MASKING_DYNAMIC])
-            
-            # Apply the first applicable transformation
-            transformation_type = applicable_transformations[0]
-            original_value = finding.get("value", "")
-            
-            # Perform transformation
-            transformed_value, confidence, metadata = self._apply_transformation(
-                original_value, transformation_type, finding, request
-            )
-            
-            result = TransformationResult(
-                original_value=original_value,
-                transformed_value=transformed_value,
-                transformation_type=transformation_type,
-                confidence=confidence,
-                metadata=metadata
-            )
-            results.append(result)
-        
-        return results
+    def _extract_laws_from_findings(self, findings: List[Dict[str, Any]]) -> List[ComplianceLaw]:
+        laws = set()
+
+        for finding in findings:
+            for law in finding.get("mapped_laws", []):
+                law_lower = law.lower()
+                if law_lower in ComplianceLaw._value2member_map_:
+                    laws.add(ComplianceLaw(law_lower))
+
+        return list(laws)
 
     def _apply_transformation(self, value: str, transformation_type: TransformationType, 
                             finding: Dict[str, Any], request: TransformationRequest) -> tuple:
@@ -256,6 +225,7 @@ class DataTransformationEngine:
             # Default to dynamic masking
             return self._dynamic_masking(value, finding)
 
+# Transformation implementations
     def _static_masking(self, value: str, finding: Dict[str, Any]) -> tuple:
         """Replace sensitive values with fixed patterns"""
         pii_type = finding.get("type", "")
@@ -488,122 +458,6 @@ class DataTransformationEngine:
         
         else:
             return value, 0.5, {"noise_type": "none_applicable"}
-
-    def get_transformation_recommendation(self, dsar_type: DSARType, data_type: DataType, 
-                                        compliance_laws: List[ComplianceLaw] = None) -> List[TransformationType]:
-        """Get recommended transformations for a given DSAR type and data type"""
-        base_transformations = self.dsar_transformation_map.get(dsar_type, {}).get(data_type, [])
-        
-        # Apply compliance law specific adjustments
-        if compliance_laws:
-            if ComplianceLaw.GDPR in compliance_laws:
-                # GDPR specific requirements
-                if dsar_type == DSARType.DELETE:
-                    base_transformations = [TransformationType.DATA_DELETION_HARD]
-                elif dsar_type == DSARType.RESTRICT_PROCESSING:
-                    base_transformations = [TransformationType.ENCRYPTION_RANDOMIZED]
-            
-            if ComplianceLaw.HIPAA in compliance_laws and data_type == DataType.HEALTH:
-                # HIPAA requires strong anonymization for health data
-                base_transformations = [TransformationType.ANONYMIZATION, TransformationType.PSEUDONYMIZATION]
-        
-        return base_transformations
-
-    def create_compliance_report(self, results: List[TransformationResult], 
-                               request: TransformationRequest) -> Dict[str, Any]:
-        """Create comprehensive compliance report"""
-        report = {
-            "report_id": str(uuid.uuid4()),
-            "generated_at": datetime.utcnow().isoformat(),
-            "dsar_type": request.dsar_type.value,
-            "compliance_laws": [law.value for law in request.compliance_laws],
-            "summary": {
-                "total_findings": len(request.findings),
-                "total_transformed": len(results),
-                "transformation_types_used": list(set(r.transformation_type.value for r in results)),
-                "average_confidence": sum(r.confidence for r in results) / len(results) if results else 0
-            },
-            "transformations": [
-                {
-                    "original_value": r.original_value,
-                    "transformed_value": r.transformed_value,
-                    "transformation_type": r.transformation_type.value,
-                    "confidence": r.confidence,
-                    "metadata": r.metadata
-                }
-                for r in results
-            ],
-            "compliance_status": self._assess_compliance_status(results, request),
-            "recommendations": self._generate_compliance_recommendations(results, request)
-        }
-        
-        return report
-
-    def _assess_compliance_status(self, results: List[TransformationResult], 
-                                request: TransformationRequest) -> Dict[str, Any]:
-        """Assess overall compliance status"""
-        status = {
-            "overall_status": "COMPLIANT",
-            "law_specific_status": {},
-            "risk_level": "LOW"
-        }
-        
-        # Check compliance for each law
-        for law in request.compliance_laws:
-            if law == ComplianceLaw.GDPR:
-                if request.dsar_type == DSARType.DELETE:
-                    # GDPR requires complete deletion
-                    hard_deletions = [r for r in results if r.transformation_type == TransformationType.DATA_DELETION_HARD]
-                    if len(hard_deletions) == len(results):
-                        status["law_specific_status"]["GDPR"] = "COMPLIANT"
-                    else:
-                        status["law_specific_status"]["GDPR"] = "PARTIAL_COMPLIANCE"
-                        status["overall_status"] = "PARTIAL_COMPLIANCE"
-                        status["risk_level"] = "MEDIUM"
-                
-            elif law == ComplianceLaw.HIPAA:
-                # HIPAA requires strong anonymization for health data
-                health_anonymized = [r for r in results if 
-                                   r.transformation_type in [TransformationType.ANONYMIZATION, 
-                                                           TransformationType.PSEUDONYMIZATION]]
-                if len(health_anonymized) >= len(results) * 0.8:  # 80% threshold
-                    status["law_specific_status"]["HIPAA"] = "COMPLIANT"
-                else:
-                    status["law_specific_status"]["HIPAA"] = "NON_COMPLIANT"
-                    status["overall_status"] = "NON_COMPLIANT"
-                    status["risk_level"] = "HIGH"
-        
-        return status
-
-    def _generate_compliance_recommendations(self, results: List[TransformationResult], 
-                                           request: TransformationRequest) -> List[str]:
-        """Generate actionable compliance recommendations"""
-        recommendations = []
-        
-        # Check for low confidence transformations
-        low_confidence = [r for r in results if r.confidence < 0.8]
-        if low_confidence:
-            recommendations.append("Review low-confidence transformations and consider manual verification")
-        
-        # GDPR specific recommendations
-        if ComplianceLaw.GDPR in request.compliance_laws:
-            if request.dsar_type == DSARType.DELETE:
-                recommendations.append("Ensure complete data deletion to meet GDPR Article 17 requirements")
-            elif request.dsar_type == DSARType.ACCESS:
-                recommendations.append("Provide data in machine-readable format as per GDPR Article 20")
-        
-        # HIPAA specific recommendations
-        if ComplianceLaw.HIPAA in request.compliance_laws:
-            recommendations.append("Implement additional anonymization measures for health data as per HIPAA Safe Harbor")
-        
-        # General recommendations
-        if any(r.transformation_type == TransformationType.ENCRYPTION_RANDOMIZED for r in results):
-            recommendations.append("Ensure encryption keys are securely managed and rotated regularly")
-        
-        if any(r.transformation_type == TransformationType.TOKENIZATION for r in results):
-            recommendations.append("Maintain secure token-to-data mapping for reversible transformations")
-        
-        return recommendations
 
 # Global transformation engine instance
 transformation_engine = DataTransformationEngine()

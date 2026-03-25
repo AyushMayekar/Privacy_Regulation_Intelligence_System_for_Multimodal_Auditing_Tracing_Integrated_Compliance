@@ -2,6 +2,8 @@
 // This file contains realistic sample data representing various integrated sources
 // and their privacy findings for development and testing purposes.
 
+const now = () => new Date().toISOString();
+
 // Sample company data representing different integrated sources
 export const integratedSources = [
   {
@@ -71,7 +73,7 @@ export const privacyFindings = [
     location: 'collection: users, field: pan_number',
     recordCount: 1247,
     sampleData: 'ABCDE1234F',
-    detectedAt: '2024-01-15T10:30:00Z',
+    detectedAt: now(),
     status: 'active',
     compliance: ['PCI-DSS', 'GDPR']
   },
@@ -86,7 +88,7 @@ export const privacyFindings = [
     location: 'collection: users, field: notes',
     recordCount: 89,
     sampleData: '1234-5678-9012',
-    detectedAt: '2024-01-15T10:25:00Z',
+    detectedAt: now(),
     status: 'active',
     compliance: ['Aadhaar Act', 'GDPR']
   },

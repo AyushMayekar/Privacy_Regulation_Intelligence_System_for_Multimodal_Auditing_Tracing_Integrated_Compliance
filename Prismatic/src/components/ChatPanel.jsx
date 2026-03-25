@@ -16,19 +16,57 @@ const ChatPanel = () => {
 
   // Hard-coded conversational logic - replace with real LLM API later
   const conversationIntents = {
+
+    // System intent
+    prismatic: {
+      keywords: ['prismatic', 'what is this', 'what does this do', 'system', 'workflow'],
+      response: async () => {
+        return {
+          message:
+            "PRISMATIC is a privacy compliance system that scans your integrated data sources, detects sensitive information (PII/PHI), processes DSAR requests, and ensures compliance through transformation and auditing.\n\n" +
+            "The workflow is:\n" +
+            "1️⃣ Scan data sources (MongoDB, Gmail, Drive, etc)\n" +
+            "2️⃣ Detect sensitive data\n" +
+            "3️⃣ Process DSAR requests\n" +
+            "4️⃣ Transform or delete data\n" +
+            "5️⃣ Generate audit logs\n\n" +
+            "You can ask me to simulate any step.",
+          actions: []
+        };
+      }
+    },
+
+    // Explain intent for detailed internal workflow explanation
+    explain: {
+      keywords: ['how', 'why', 'explain', 'flow', 'working'],
+      response: async () => {
+        return {
+          message:
+            "Here’s how PRISMATIC works internally:\n\n" +
+            "• Scanners detect sensitive fields like PAN, Aadhaar, emails\n" +
+            "• Findings are passed into a DSAR workflow\n" +
+            "• Decisions are made (mask, delete, retain)\n" +
+            "• Data is transformed accordingly\n" +
+            "• Every action is logged for audit compliance\n\n" +
+            "This ensures GDPR-style accountability.",
+          actions: []
+        };
+      }
+    },
+
     // MongoDB-related queries
     mongodb: {
       keywords: ['mongodb', 'mongo', 'mongo db', 'database', 'users collection'],
       response: async () => {
         const findings = await mockApi.getFindingsBySource('mongodb_users');
         const data = findings.data || [];
-        
+
         return {
           message: `I found ${data.length} privacy issues in your MongoDB users collection:\n\n` +
-                  `🔴 **Critical**: ${data.filter(f => f.severity === 'critical').length} findings\n` +
-                  `🟠 **High**: ${data.filter(f => f.severity === 'high').length} findings\n` +
-                  `🟡 **Medium**: ${data.filter(f => f.severity === 'medium').length} findings\n\n` +
-                  `Most concerning: Unmasked Aadhaar numbers and plaintext PAN data detected.`,
+            `🔴 **Critical**: ${data.filter(f => f.severity === 'critical').length} findings\n` +
+            `🟠 **High**: ${data.filter(f => f.severity === 'high').length} findings\n` +
+            `🟡 **Medium**: ${data.filter(f => f.severity === 'medium').length} findings\n\n` +
+            `Most concerning: Unmasked Aadhaar numbers and plaintext PAN data detected.`,
           actions: [
             {
               label: 'Check Scan History',
@@ -41,7 +79,7 @@ const ChatPanel = () => {
         };
       }
     },
-    
+
     // Google Drive-related queries
     googleDrive: {
       keywords: ['google drive', 'drive', 'google', 'hr documents', 'finance reports'],
@@ -49,12 +87,12 @@ const ChatPanel = () => {
         const hrFindings = await mockApi.getFindingsBySource('google_drive_hr');
         const financeFindings = await mockApi.getFindingsBySource('google_drive_finance');
         const totalFindings = (hrFindings.data || []).length + (financeFindings.data || []).length;
-        
+
         return {
           message: `I detected ${totalFindings} privacy issues across your Google Drive:\n\n` +
-                  `📁 **HR Documents**: ${(hrFindings.data || []).length} findings\n` +
-                  `📊 **Finance Reports**: ${(financeFindings.data || []).length} findings\n\n` +
-                  `Issues include Aadhaar numbers in employee forms and bank account details in salary reports.`,
+            `📁 **HR Documents**: ${(hrFindings.data || []).length} findings\n` +
+            `📊 **Finance Reports**: ${(financeFindings.data || []).length} findings\n\n` +
+            `Issues include Aadhaar numbers in employee forms and bank account details in salary reports.`,
           actions: [
             {
               label: 'Open Integrations → Google Drive',
@@ -67,19 +105,19 @@ const ChatPanel = () => {
         };
       }
     },
-    
+
     // Slack-related queries
     slack: {
       keywords: ['slack', 'workspace', 'channels', 'communication'],
       response: async () => {
         const findings = await mockApi.getFindingsBySource('slack_workspace');
         const data = findings.data || [];
-        
+
         return {
           message: `I found ${data.length} privacy issues in your Slack workspace:\n\n` +
-                  `💬 **Shared Files**: CSV files with PAN numbers in #general\n` +
-                  `📧 **Personal Emails**: Personal email addresses shared in #hr\n\n` +
-                  `These communications may contain sensitive data that should be reviewed.`,
+            `💬 **Shared Files**: CSV files with PAN numbers in #general\n` +
+            `📧 **Personal Emails**: Personal email addresses shared in #hr\n\n` +
+            `These communications may contain sensitive data that should be reviewed.`,
           actions: [
             {
               label: 'Scan History',
@@ -92,7 +130,7 @@ const ChatPanel = () => {
         };
       }
     },
-    
+
     // DSAR-related queries
     dsar: {
       keywords: ['dsar', 'data subject', 'access request', 'delete my data', 'export my data', 'gdpr request'],
@@ -102,14 +140,14 @@ const ChatPanel = () => {
         const pending = data.filter(r => r.status === 'pending').length;
         const inProgress = data.filter(r => r.status === 'in_progress').length;
         const completed = data.filter(r => r.status === 'completed').length;
-        
+
         return {
           message: `Here's your current DSAR request status:\n\n` +
-                  `📋 **Total Requests**: ${data.length}\n` +
-                  `⏳ **Pending**: ${pending}\n` +
-                  `🔄 **In Progress**: ${inProgress}\n` +
-                  `✅ **Completed**: ${completed}\n\n` +
-                  `All requests are being processed within GDPR timelines.`,
+            `📋 **Total Requests**: ${data.length}\n` +
+            `⏳ **Pending**: ${pending}\n` +
+            `🔄 **In Progress**: ${inProgress}\n` +
+            `✅ **Completed**: ${completed}\n\n` +
+            `All requests are being processed within GDPR timelines.`,
           actions: [
             {
               label: 'DSAR Requests',
@@ -122,7 +160,7 @@ const ChatPanel = () => {
         };
       }
     },
-    
+
     // S3-related queries
     s3: {
       keywords: ['s3', 'aws', 'bucket', 'uploads', 'cloud storage'],
@@ -130,13 +168,13 @@ const ChatPanel = () => {
         const findings = await mockApi.getFindingsBySource('s3_uploads');
         const data = findings.data || [];
         const critical = data.filter(f => f.severity === 'critical').length;
-        
+
         return {
           message: `I found ${data.length} privacy issues in your S3 bucket:\n\n` +
-                  `🚨 **Critical Alert**: ${critical} critical findings detected\n` +
-                  `📁 **Public Files**: PHI data accessible without authentication\n` +
-                  `🔒 **Security Risk**: Immediate attention required\n\n` +
-                  `These issues pose significant compliance risks.`,
+            `🚨 **Critical Alert**: ${critical} critical findings detected\n` +
+            `📁 **Public Files**: PHI data accessible without authentication\n` +
+            `🔒 **Security Risk**: Immediate attention required\n\n` +
+            `These issues pose significant compliance risks.`,
           actions: [
             {
               label: 'Check Scan History',
@@ -188,27 +226,28 @@ const ChatPanel = () => {
   // Simple keyword-based NLP matching
   const findMatchingIntent = (userMessage) => {
     const message = userMessage.toLowerCase();
-    
+
     for (const [intentName, intent] of Object.entries(conversationIntents)) {
-      const hasKeyword = intent.keywords.some(keyword => 
+      const hasKeyword = intent.keywords.some(keyword =>
         message.includes(keyword.toLowerCase())
       );
       if (hasKeyword) {
         return intentName;
       }
     }
-    
+
     return null;
   };
 
   // Generate fallback response
   const getFallbackResponse = () => {
     return {
-      message: "I don't have live access to real-time data. For comprehensive reports and detailed analysis, please visit:\n\n" +
-              "• **Scan History** - View all privacy scan results\n" +
-              "• **DSAR Requests** - Manage data subject access requests\n" +
-              "• **Integrations** - Monitor connected data sources\n\n" +
-              "Try asking about specific sources like 'MongoDB', 'Google Drive', 'Slack', or 'DSAR requests'.",
+      message: "I’m designed to assist only with PRISMATIC workflows (privacy scans, DSAR, compliance).\n\n" +
+        "Try asking:\n" +
+        "• 'Scan MongoDB'\n" +
+        "• 'Show DSAR status'\n" +
+        "• 'Explain workflow'\n\n" +
+        "Let’s stay focused on compliance.",
       actions: [
         {
           label: 'Scan History',
@@ -239,12 +278,12 @@ const ChatPanel = () => {
   // Handle sending a message
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    
+
     if (!inputValue.trim() || isLoading) return;
 
     const userMessage = inputValue.trim();
     setInputValue('');
-    
+
     // Add user message
     const newMessages = [...messages, {
       id: Date.now(),
@@ -257,19 +296,19 @@ const ChatPanel = () => {
 
     // Simulate typing delay (800-1500ms)
     const typingDelay = Math.random() * 700 + 800;
-    
+
     setTimeout(async () => {
       try {
         // Find matching intent
         const matchedIntent = findMatchingIntent(userMessage);
         let response;
-        
+
         if (matchedIntent && conversationIntents[matchedIntent]) {
           response = await conversationIntents[matchedIntent].response();
         } else {
           response = getFallbackResponse();
         }
-        
+
         // Add assistant response
         const assistantMessage = {
           id: Date.now() + 1,
@@ -278,7 +317,7 @@ const ChatPanel = () => {
           timestamp: new Date().toISOString(),
           actions: response.actions || []
         };
-        
+
         setMessages(prev => [...prev, assistantMessage]);
       } catch (error) {
         console.error('Error generating response:', error);
@@ -307,22 +346,22 @@ const ChatPanel = () => {
   // Handle starting chat
   const handleStartChat = () => {
     setIsChatStarted(true);
-    
+
     // Add welcome message
     const welcomeMessage = {
       id: Date.now(),
       message: "Hello! I'm your Privacy Intelligence Assistant. I can help you understand your privacy findings and DSAR requests.\n\n" +
-              "Try asking me about:\n" +
-              "• MongoDB vulnerabilities\n" +
-              "• Google Drive leaks\n" +
-              "• Slack privacy issues\n" +
-              "• DSAR request status\n" +
-              "• S3 security findings",
+        "Try asking me about:\n" +
+        "• MongoDB vulnerabilities\n" +
+        "• Google Drive leaks\n" +
+        "• Slack privacy issues\n" +
+        "• DSAR request status\n" +
+        "• S3 security findings",
       isUser: false,
       timestamp: new Date().toISOString(),
       actions: []
     };
-    
+
     setMessages([welcomeMessage]);
   };
 
@@ -353,7 +392,7 @@ const ChatPanel = () => {
             <p className="text-muted mb-4">
               Get instant insights about your privacy findings, DSAR requests, and compliance status.
             </p>
-            <button 
+            <button
               className="start-chat-button"
               onClick={handleStartChat}
               aria-label="Start conversation with Privacy Intelligence Assistant"
@@ -378,7 +417,7 @@ const ChatPanel = () => {
           <div className="status-dot"></div>
           <span>Online</span>
         </div>
-        <button 
+        <button
           className="btn btn-sm btn-outline-light ms-auto"
           onClick={clearChatHistory}
           aria-label="Clear chat history"
@@ -398,7 +437,7 @@ const ChatPanel = () => {
             actions={msg.actions}
           />
         ))}
-        
+
         {/* Loading indicator */}
         {isLoading && (
           <ChatBubble
@@ -407,7 +446,7 @@ const ChatPanel = () => {
             isLoading={true}
           />
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
