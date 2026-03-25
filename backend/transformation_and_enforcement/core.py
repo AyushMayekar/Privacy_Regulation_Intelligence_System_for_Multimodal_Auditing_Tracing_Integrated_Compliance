@@ -517,7 +517,10 @@ async def scan_gmail(admin_email: str) -> List[Dict[str, Any]]:
     tasks = [scan_email_content(e, dsar_classifier = dsar_classifier) for e in all_emails]
     all_findings = await asyncio.gather(*tasks)
     
-    return [f for sublist in all_findings for f in sublist]
+    return {
+    "success": True,
+    "findings": [f for sublist in all_findings for f in sublist]
+}
 
 # Data Transformation Logic
 def route_findings(findings):
