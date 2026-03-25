@@ -5,12 +5,29 @@ import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { mockApi } from '../../api/mockApi.js';
 
+type Severity = "critical" | "high" | "medium" | "low";
+type Category = "PII" | "PHI" | "Financial" | "Other";
+
+interface Finding {
+  id: string;
+  severity: Severity;
+  category: Category;
+  dataType: string;
+  sourceId: string;
+  sourceName: string;
+  location: string;
+  description: string;
+  recordCount: number;
+  detectedAt: string;
+  status: "active" | "resolved";
+}
+
 const Findings = () => {
-  const [findings, setFindings] = useState([]);
-  const [filteredFindings, setFilteredFindings] = useState([]);
-  const [selectedSeverity, setSelectedSeverity] = useState('');
-  const [selectedSource, setSelectedSource] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [filteredFindings, setFilteredFindings] = useState<Finding[]>([]);
+  const [selectedSeverity, setSelectedSeverity] = useState<Severity | "">("");
+  const [selectedSource, setSelectedSource] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     loadFindings();
@@ -46,7 +63,7 @@ const Findings = () => {
     setFilteredFindings(filtered);
   };
 
-  const getSeverityBadge = (severity) => {
+  const getSeverityBadge = (severity: Severity) => {
     const badges = {
       critical: { class: 'bg-danger', text: 'Critical' },
       high: { class: 'bg-warning', text: 'High' },
@@ -54,7 +71,7 @@ const Findings = () => {
       low: { class: 'bg-secondary', text: 'Low' }
     };
     
-    const badge = badges[severity] || { class: 'bg-secondary', text: 'Unknown' };
+    const badge = badges[severity];
     
     return (
       <span className={`badge ${badge.class} text-white`}>
@@ -63,7 +80,7 @@ const Findings = () => {
     );
   };
 
-  const getCategoryIcon = (category) => {
+  const getCategoryIcon = (category:Category) => {
     const icons = {
       PII: 'person-badge',
       PHI: 'heart-pulse',
@@ -108,7 +125,7 @@ const Findings = () => {
               <select 
                 className="form-select" 
                 value={selectedSeverity} 
-                onChange={(e) => setSelectedSeverity(e.target.value)}
+                onChange={(e) => setSelectedSeverity(e.target.value as Severity | "")}
               >
                 <option value="">All Severities</option>
                 <option value="critical">Critical</option>

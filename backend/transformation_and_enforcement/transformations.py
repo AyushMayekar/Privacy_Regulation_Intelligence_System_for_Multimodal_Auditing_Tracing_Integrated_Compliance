@@ -1,0 +1,463 @@
+import hashlib
+import base64
+import json
+import re
+from datetime import datetime, timedelta
+from typing import Dict, List, Any
+from enum import Enum
+from cryptography.fernet import Fernet
+import uuid
+import random
+
+class TransformationType(str, Enum):
+    """Available transformation types"""
+    MASKING_STATIC = "masking_static"
+    MASKING_DYNAMIC = "masking_dynamic"
+    REDACTION = "redaction"
+    ENCRYPTION_DETERMINISTIC = "encryption_deterministic"
+    ENCRYPTION_RANDOMIZED = "encryption_randomized"
+    HASHING = "hashing"
+    PSEUDONYMIZATION = "pseudonymization"
+    ANONYMIZATION = "anonymization"
+    TOKENIZATION = "tokenization"
+    DATA_DELETION_HARD = "data_deletion_hard"
+    DATA_DELETION_SOFT = "data_deletion_soft"
+    DATA_PORTABILITY = "data_portability"
+    DATA_RECTIFICATION = "data_rectification"
+    AGGREGATION = "aggregation"
+    SUPPRESSION = "suppression"
+    PERTURBATION = "perturbation"
+
+class DSARType(str, Enum):
+    """DSAR request types"""
+    ACCESS = "access"
+    DELETE = "delete"
+    RECTIFY = "rectify"
+    RESTRICT_PROCESSING = "restrict_processing"
+    PORTABILITY = "portability"
+    OBJECT_TO_PROCESSING = "object_to_processing"
+
+class DataType(str, Enum):
+    """Data categories for transformation rules"""
+    IDENTIFIERS = "identifiers"  
+    FINANCIAL = "financial"      
+    HEALTH = "health"           
+    LOCATION = "location"       
+    BEHAVIORAL = "behavioral"   
+    BIOMETRIC = "biometric"     
+
+DSAR_POLICY_MAP = {
+    DSARType.ACCESS: {
+        DataType.IDENTIFIERS: TransformationType.MASKING_DYNAMIC,
+        DataType.FINANCIAL: TransformationType.MASKING_DYNAMIC,
+        DataType.HEALTH: TransformationType.PSEUDONYMIZATION,
+        DataType.LOCATION: TransformationType.AGGREGATION,
+        DataType.BEHAVIORAL: TransformationType.HASHING,
+        DataType.BIOMETRIC: TransformationType.PSEUDONYMIZATION,
+    },
+
+    DSARType.DELETE: {
+        DataType.IDENTIFIERS: TransformationType.DATA_DELETION_HARD,
+        DataType.FINANCIAL: TransformationType.DATA_DELETION_HARD,
+        DataType.HEALTH: TransformationType.ANONYMIZATION,
+        DataType.LOCATION: TransformationType.DATA_DELETION_HARD,
+        DataType.BEHAVIORAL: TransformationType.DATA_DELETION_HARD,
+        DataType.BIOMETRIC: TransformationType.DATA_DELETION_HARD,
+    },
+
+    DSARType.RECTIFY: {
+        DataType.IDENTIFIERS: TransformationType.DATA_RECTIFICATION,
+        DataType.FINANCIAL: TransformationType.DATA_RECTIFICATION,
+        DataType.HEALTH: TransformationType.DATA_RECTIFICATION,
+        DataType.LOCATION: TransformationType.DATA_RECTIFICATION,
+    },
+
+    DSARType.RESTRICT_PROCESSING: {
+        DataType.IDENTIFIERS: TransformationType.ENCRYPTION_RANDOMIZED,
+        DataType.FINANCIAL: TransformationType.ENCRYPTION_RANDOMIZED,
+        DataType.HEALTH: TransformationType.PSEUDONYMIZATION,
+        DataType.BEHAVIORAL: TransformationType.ENCRYPTION_RANDOMIZED,
+    },
+
+    DSARType.PORTABILITY: {
+        DataType.IDENTIFIERS: TransformationType.DATA_PORTABILITY,
+        DataType.FINANCIAL: TransformationType.DATA_PORTABILITY,
+        DataType.HEALTH: TransformationType.DATA_PORTABILITY,
+        DataType.LOCATION: TransformationType.DATA_PORTABILITY,
+    },
+
+    DSARType.OBJECT_TO_PROCESSING: {
+        DataType.BEHAVIORAL: TransformationType.SUPPRESSION,
+        DataType.IDENTIFIERS: TransformationType.SUPPRESSION,
+    }
+}
+
+class ComplianceLaw(str, Enum):
+    """Applicable compliance laws"""
+    GDPR = "gdpr"
+    CCPA = "ccpa"
+    DPDP = "dpdp"
+    HIPAA = "hipaa"
+    PCI_DSS = "pci_dss"
+
+LAW_OVERRIDES = {
+    ComplianceLaw.GDPR: {
+        DSARType.DELETE: TransformationType.DATA_DELETION_HARD
+    },
+
+    ComplianceLaw.HIPAA: {
+        DataType.HEALTH: TransformationType.ANONYMIZATION
+    },
+
+    ComplianceLaw.PCI_DSS: {
+        DataType.FINANCIAL: TransformationType.TOKENIZATION
+    }
+}
+
+class TransformationRequest:
+    """Request for data transformation"""
+    def __init__(self, 
+                findings: List[Dict[str, Any]], 
+                dsar_type: DSARType,
+                data_types: List[DataType] = None,
+                user_context: Dict[str, Any] = None):
+        self.findings = findings
+        self.dsar_type = dsar_type
+        self.data_types = data_types or []
+        self.user_context = user_context or {}
+        self.timestamp = datetime.utcnow()
+
+class TransformationResult:
+    """Result of data transformation"""
+    def __init__(self, 
+                 original_value: str,
+                 transformed_value: str,
+                 transformation_type: TransformationType,
+                 confidence: float,
+                 metadata: Dict[str, Any] = None):
+        self.original_value = original_value
+        self.transformed_value = transformed_value
+        self.transformation_type = transformation_type
+        self.confidence = confidence
+        self.metadata = metadata or {}
+        self.timestamp = datetime.utcnow()
+
+class DataTransformationEngine:
+    def __init__(self):
+        # Initialize encryption keys (in production, use proper key management)
+        self._init_encryption_keys()
+
+    def _init_encryption_keys(self):
+        """Initialize encryption keys for deterministic and randomized encryption"""
+        # In production, use proper key management (AWS KMS, Azure Key Vault, etc.)
+        self.deterministic_key = Fernet.generate_key()
+        self.randomized_key = Fernet.generate_key()
+        self.deterministic_cipher = Fernet(self.deterministic_key)
+        self.randomized_cipher = Fernet(self.randomized_key)
+        
+        # Pseudonymization mapping (in production, use secure database)
+        self.pseudonym_map = {}
+
+    def _extract_laws_from_findings(self, findings: List[Dict[str, Any]]) -> List[ComplianceLaw]:
+        laws = set()
+
+        for finding in findings:
+            for law in finding.get("mapped_laws", []):
+                law_lower = law.lower()
+                if law_lower in ComplianceLaw._value2member_map_:
+                    laws.add(ComplianceLaw(law_lower))
+
+        return list(laws)
+
+    def _apply_transformation(self, value: str, transformation_type: TransformationType, 
+                            finding: Dict[str, Any], request: TransformationRequest) -> tuple:
+        """Apply specific transformation to a value"""
+        
+        if transformation_type == TransformationType.MASKING_STATIC:
+            return self._static_masking(value, finding)
+        
+        elif transformation_type == TransformationType.MASKING_DYNAMIC:
+            return self._dynamic_masking(value, finding)
+        
+        elif transformation_type == TransformationType.REDACTION:
+            return self._redaction(value, finding)
+        
+        elif transformation_type == TransformationType.ENCRYPTION_DETERMINISTIC:
+            return self._deterministic_encryption(value, finding)
+        
+        elif transformation_type == TransformationType.ENCRYPTION_RANDOMIZED:
+            return self._randomized_encryption(value, finding)
+        
+        elif transformation_type == TransformationType.HASHING:
+            return self._hashing(value, finding)
+        
+        elif transformation_type == TransformationType.PSEUDONYMIZATION:
+            return self._pseudonymization(value, finding)
+        
+        elif transformation_type == TransformationType.ANONYMIZATION:
+            return self._anonymization(value, finding)
+        
+        elif transformation_type == TransformationType.TOKENIZATION:
+            return self._tokenization(value, finding)
+        
+        elif transformation_type == TransformationType.DATA_DELETION_HARD:
+            return self._hard_deletion(value, finding)
+        
+        elif transformation_type == TransformationType.DATA_DELETION_SOFT:
+            return self._soft_deletion(value, finding)
+        
+        elif transformation_type == TransformationType.DATA_PORTABILITY:
+            return self._data_portability(value, finding)
+        
+        elif transformation_type == TransformationType.DATA_RECTIFICATION:
+            return self._data_rectification(value, finding, request)
+        
+        elif transformation_type == TransformationType.AGGREGATION:
+            return self._aggregation(value, finding)
+        
+        elif transformation_type == TransformationType.SUPPRESSION:
+            return self._suppression(value, finding)
+        
+        elif transformation_type == TransformationType.PERTURBATION:
+            return self._perturbation(value, finding)
+        
+        else:
+            # Default to dynamic masking
+            return self._dynamic_masking(value, finding)
+
+# Transformation implementations
+    def _static_masking(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Replace sensitive values with fixed patterns"""
+        pii_type = finding.get("type", "")
+        
+        if pii_type == "email":
+            if "@" in value:
+                local, domain = value.split("@", 1)
+                masked = local[0] + "*" * (len(local) - 1) + "@" + domain
+                return masked, 0.95, {"pattern": "email_static_mask"}
+        
+        elif pii_type in ["phone", "aadhaar"]:
+            # Keep last 4 digits
+            if len(value) >= 4:
+                masked = "*" * (len(value) - 4) + value[-4:]
+                return masked, 0.95, {"pattern": "last_4_digits"}
+        
+        elif pii_type == "pan":
+            # Show first 2 and last 2 characters
+            if len(value) >= 4:
+                masked = value[:2] + "*" * (len(value) - 4) + value[-2:]
+                return masked, 0.95, {"pattern": "first_last_2"}
+        
+        elif pii_type in ["credit_card", "ssn"]:
+            # Standard masking patterns
+            if pii_type == "credit_card":
+                masked = "****-****-****-" + value[-4:] if len(value) >= 4 else "****"
+            else:  # SSN
+                masked = "***-**-" + value[-4:] if len(value) >= 4 else "***-**-****"
+            return masked, 0.95, {"pattern": "standard_financial_mask"}
+        
+        # Default masking
+        if len(value) > 4:
+            masked = value[:2] + "*" * (len(value) - 4) + value[-2:]
+        else:
+            masked = "*" * len(value)
+        return masked, 0.8, {"pattern": "default_mask"}
+
+    def _dynamic_masking(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Return masked values at query time, original stays intact"""
+        # For dynamic masking, we return a masked version but keep original
+        masked_value, confidence, metadata = self._static_masking(value, finding)
+        metadata["original_preserved"] = True
+        metadata["masking_type"] = "dynamic"
+        return masked_value, confidence, metadata
+
+    def _redaction(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Remove or black out entire data fields"""
+        return "[REDACTED]", 1.0, {"redaction_reason": "sensitive_data"}
+
+    def _deterministic_encryption(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Same input → same encrypted output (useful for indexing)"""
+        try:
+            encrypted = self.deterministic_cipher.encrypt(value.encode())
+            encrypted_str = base64.urlsafe_b64encode(encrypted).decode()
+            return encrypted_str, 0.95, {"encryption_type": "deterministic", "reversible": True}
+        except Exception as e:
+            return f"ENCRYPTION_ERROR: {str(e)}", 0.0, {"error": str(e)}
+
+    def _randomized_encryption(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Input → different output each time (more secure)"""
+        try:
+            encrypted = self.randomized_cipher.encrypt(value.encode())
+            encrypted_str = base64.urlsafe_b64encode(encrypted).decode()
+            return encrypted_str, 0.95, {"encryption_type": "randomized", "reversible": True}
+        except Exception as e:
+            return f"ENCRYPTION_ERROR: {str(e)}", 0.0, {"error": str(e)}
+
+    def _hashing(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Irreversible one-way conversion"""
+        # Use SHA-256 for consistent hashing
+        hashed = hashlib.sha256(value.encode()).hexdigest()
+        return hashed, 1.0, {"hash_algorithm": "SHA-256", "reversible": False}
+
+    def _pseudonymization(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Replace identifiers with consistent fake values"""
+        pii_type = finding.get("type", "")
+        
+        # Check if we already have a pseudonym for this value
+        if value in self.pseudonym_map:
+            return self.pseudonym_map[value], 1.0, {"pseudonym_type": "existing"}
+        
+        # Generate new pseudonym based on type
+        if pii_type == "email":
+            domains = ["example.com", "test.org", "demo.net"]
+            pseudonym = f"user{len(self.pseudonym_map) + 1}@{random.choice(domains)}"
+        elif pii_type in ["phone", "aadhaar"]:
+            pseudonym = f"+91-{random.randint(6000000000, 9999999999)}"
+        elif pii_type == "pan":
+            letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            numbers = "0123456789"
+            pseudonym = ''.join(random.choices(letters, k=5)) + ''.join(random.choices(numbers, k=4)) + random.choice(letters)
+        elif pii_type == "name":
+            first_names = ["John", "Jane", "Alex", "Sam", "Taylor", "Casey"]
+            last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones"]
+            pseudonym = f"{random.choice(first_names)} {random.choice(last_names)}"
+        else:
+            pseudonym = f"pseudo_{uuid.uuid4().hex[:8]}"
+        
+        # Store mapping
+        self.pseudonym_map[value] = pseudonym
+        return pseudonym, 1.0, {"pseudonym_type": "generated"}
+
+    def _anonymization(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Strip data so it cannot be re-identified"""
+        pii_type = finding.get("type", "")
+        
+        if pii_type == "dob":
+            # Generalize date to year only
+            try:
+                year = datetime.strptime(value, "%Y-%m-%d").year
+                return f"{year}", 0.9, {"anonymization_type": "year_only"}
+            except:
+                return "ANONYMIZED", 1.0, {"anonymization_type": "complete"}
+        
+        elif pii_type == "address":
+            # Keep only city
+            parts = value.split(",")
+            if len(parts) >= 2:
+                return parts[-2].strip(), 0.8, {"anonymization_type": "city_only"}
+            else:
+                return "ANONYMIZED", 1.0, {"anonymization_type": "complete"}
+        
+        else:
+            return "ANONYMIZED", 1.0, {"anonymization_type": "complete"}
+
+    def _tokenization(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Replace sensitive values with tokens (mappable back to originals)"""
+        # Generate unique token
+        token = f"TOKEN_{uuid.uuid4().hex[:12].upper()}"
+        
+        # In production, store mapping in secure database
+        metadata = {
+            "token_type": "reversible",
+            "token_id": token,
+            "original_length": len(value),
+            "mapping_stored": True
+        }
+        
+        return token, 1.0, metadata
+
+    def _hard_deletion(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Remove permanently"""
+        return "", 1.0, {"deletion_type": "hard", "deleted_at": datetime.utcnow().isoformat()}
+
+    def _soft_deletion(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Mark as deleted but keep internally (audit purposes)"""
+        return "[DELETED]", 1.0, {
+            "deletion_type": "soft", 
+            "deleted_at": datetime.utcnow().isoformat(),
+            "original_preserved": True
+        }
+
+    def _data_portability(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Transform data into machine-readable structured format"""
+        pii_type = finding.get("type", "")
+        
+        # Create structured JSON format
+        structured_data = {
+            "type": pii_type,
+            "value": value,
+            "metadata": {
+                "extracted_at": datetime.utcnow().isoformat(),
+                "source": finding.get("collection", "unknown"),
+                "field_path": finding.get("field_path", "unknown")
+            }
+        }
+        
+        return json.dumps(structured_data, indent=2), 1.0, {"format": "JSON", "machine_readable": True}
+
+    def _data_rectification(self, value: str, finding: Dict[str, Any], request: TransformationRequest) -> tuple:
+        """Update incorrect data entries"""
+        # For rectification, we need the corrected value from user context
+        corrected_value = request.user_context.get("corrected_value", value)
+        
+        return corrected_value, 1.0, {
+            "rectification_type": "data_update",
+            "original_value": value,
+            "corrected_at": datetime.utcnow().isoformat()
+        }
+
+    def _aggregation(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Reduce granularity"""
+        pii_type = finding.get("type", "")
+        
+        if pii_type == "dob":
+            try:
+                date_obj = datetime.strptime(value, "%Y-%m-%d")
+                return f"{date_obj.year}-{date_obj.month:02d}", 0.9, {"granularity": "year_month"}
+            except:
+                return "AGGREGATED", 1.0, {"granularity": "unknown"}
+        
+        elif pii_type == "address":
+            # Keep only city and state
+            parts = value.split(",")
+            if len(parts) >= 2:
+                return f"{parts[-2].strip()}, {parts[-1].strip()}", 0.8, {"granularity": "city_state"}
+            else:
+                return "AGGREGATED", 1.0, {"granularity": "unknown"}
+        
+        else:
+            return f"AGGREGATED_{pii_type.upper()}", 1.0, {"granularity": "type_based"}
+
+    def _suppression(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Omit fields entirely from results"""
+        return None, 1.0, {"suppression_reason": "field_omitted", "suppressed_at": datetime.utcnow().isoformat()}
+
+    def _perturbation(self, value: str, finding: Dict[str, Any]) -> tuple:
+        """Add small statistical noise to values"""
+        pii_type = finding.get("type", "")
+        
+        if pii_type in ["dob"] and re.match(r'\d{4}-\d{2}-\d{2}', value):
+            try:
+                date_obj = datetime.strptime(value, "%Y-%m-%d")
+                # Add random noise of ±30 days
+                noise_days = random.randint(-30, 30)
+                perturbed_date = date_obj + timedelta(days=noise_days)
+                return perturbed_date.strftime("%Y-%m-%d"), 0.8, {"noise_range": "±30_days"}
+            except:
+                return value, 0.0, {"error": "date_parsing_failed"}
+        
+        elif pii_type in ["phone", "aadhaar"] and value.isdigit():
+            # Add small random noise to numbers
+            try:
+                num = int(value)
+                noise = random.randint(-1000, 1000)
+                perturbed = max(0, num + noise)  # Ensure non-negative
+                return str(perturbed), 0.7, {"noise_range": "±1000"}
+            except:
+                return value, 0.0, {"error": "number_parsing_failed"}
+        
+        else:
+            return value, 0.5, {"noise_type": "none_applicable"}
+
+# Global transformation engine instance
+transformation_engine = DataTransformationEngine()
