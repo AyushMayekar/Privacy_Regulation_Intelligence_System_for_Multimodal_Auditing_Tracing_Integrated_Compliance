@@ -43,6 +43,7 @@ class ChatState(TypedDict):
 # 🔒 SANITIZER (CRITICAL)
 # =========================
 
+# Extracting insughts from scan output
 def extract_tool_data(content):
     try:
         # ✅ CASE 1: Already parsed (list/dict)
@@ -72,63 +73,122 @@ def extract_tool_data(content):
         return None
 
 
-def summarize_tool_output(content):
-    data = extract_tool_data(content)
-    log_event("extracted_tool_data", {
-    "is_none": data is None,
-    "data_type": str(type(data)),
-    "has_findings": isinstance(data, dict) and ("findings" in data or "results" in data),
-    "preview": str(data)[:2000]
-})
 
-    if not data:
-        return "Tool executed."
+# Extracting insight from tranformation results 
+def extract_transformation_insights(results):
+    if not results:
+        return {}
 
-    # Extract findings
-    if isinstance(data, dict):
-        findings = data.get("findings", []) or data.get("results", [])
-    elif isinstance(data, list):
-        findings = data
-    else:
-        return "Operation completed."
+    total = len(results)
 
+    type_counts = {}
+    pii_counts = {}
+    law_counts = {}
+    avg_conf = 0
+
+    for r in results:
+        # transformation type
+        t = r.get("transformation_type", "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+        # metadata
+        meta = r.get("metadata", {})
+
+        pii = meta.get("pii_type", "unknown")
+        pii_counts[pii] = pii_counts.get(pii, 0) + 1
+
+        for law in meta.get("derived_laws", []):
+            law_counts[law.upper()] = law_counts.get(law.upper(), 0) + 1
+
+        avg_conf += r.get("confidence", 0)
+
+    avg_conf = avg_conf / total if total else 0
+
+    return {
+        "total_records": total,
+        "transformation_types": type_counts,
+        "pii_types": pii_counts,
+        "laws_applied": law_counts,
+        "average_confidence": round(avg_conf, 2)
+    }
+
+
+def summarize_findings(findings):
     if not findings:
         return "No sensitive data found."
 
     total = len(findings)
 
-    # 🔥 Aggregate intelligence
     type_counts = {}
-    source_counts = {}
     field_counts = {}
     law_counts = {}
 
     for f in findings:
-        # Type
         t = f.get("type", "unknown")
         type_counts[t] = type_counts.get(t, 0) + 1
 
-        # Source (collection/email)
-        src = f.get("collection") or f.get("email_id") or "unknown"
-        source_counts[src] = source_counts.get(src, 0) + 1
-
-        # Field path
-        field = f.get("field_path") or "unknown"
+        field = f.get("field_path", "unknown")
         field_counts[field] = field_counts.get(field, 0) + 1
 
-        # Laws
         for law in f.get("mapped_laws", []):
             law_counts[law] = law_counts.get(law, 0) + 1
 
-    # 🔥 Build compact summary
-    summary = f"Detected {total} sensitive records.\n"
     confidence_avg = sum(f.get("confidence", 0) for f in findings) / total
-    summary += f"Average Confidence: {round(confidence_avg, 2)}\n"
-    summary += f"Types: {type_counts}\n"
-    summary += f"Top Fields: {dict(list(field_counts.items())[:3])}\n"
-    summary += f"Laws: {law_counts}\n"
 
-    return summary
+    return (
+        f"Detected {total} sensitive records.\n"
+        f"Average Confidence: {round(confidence_avg, 2)}\n"
+        f"Types: {type_counts}\n"
+        f"Top Fields: {dict(list(field_counts.items())[:3])}\n"
+        f"Laws: {law_counts}\n"
+    )
+
+
+def summarize_tool_output(content):
+    data = extract_tool_data(content)
+
+    log_event("extracted_tool_data", {
+        "is_none": data is None,
+        "data_type": str(type(data)),
+        "has_findings": isinstance(data, dict) and ("findings" in data or "results" in data),
+        "preview": str(data)[:2000]
+    })
+
+    if not data:
+        return "Tool executed."
+
+    # =========================
+    # CASE 1: DICT RESPONSE
+    # =========================
+    if isinstance(data, dict):
+
+        # 🔍 SCAN RESULTS
+        if "findings" in data:
+            return summarize_findings(data["findings"])
+
+        # 🔁 TRANSFORMATION RESULTS
+        elif "results" in data:
+            insights = extract_transformation_insights(data["results"])
+
+            return (
+                f"Transformed {insights['total_records']} records.\n"
+                f"Average Confidence: {insights['average_confidence']}\n"
+                f"Transformation Types: {insights['transformation_types']}\n"
+                f"PII Types: {insights['pii_types']}\n"
+                f"Laws Applied: {insights['laws_applied']}"
+            )
+
+        # fallback
+        elif data.get("message"):
+            return data["message"]
+
+    # =========================
+    # CASE 2: LIST RESPONSE (rare)
+    # =========================
+    if isinstance(data, list):
+        return summarize_findings(data)
+
+    return "Operation completed."
 
 # =========================
 # 🤖 SYSTEM PROMPT
