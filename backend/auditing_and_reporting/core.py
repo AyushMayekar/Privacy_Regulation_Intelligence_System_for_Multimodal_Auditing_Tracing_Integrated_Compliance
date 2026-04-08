@@ -78,7 +78,7 @@ def _bulk_insert(docs: List[Dict[str, Any]]) -> None:
     """
     Audits.insert_many(docs, ordered=False)
 
-# Function to retrieve audits for a specific admin and dsar_id
+# Function to retrieve audits for a specific admin
 def retrieve_audits(
     query: AuditQuery
 ) -> List[Dict[str, Any]]:
