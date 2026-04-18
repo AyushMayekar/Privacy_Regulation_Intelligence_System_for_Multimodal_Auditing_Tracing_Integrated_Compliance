@@ -266,6 +266,25 @@ SYSTEM_PROMPT = """
 """
 
 
+RESPONSE_PROMPT = """
+You are PRISMATIC Assistant.
+
+You will be given a system-generated summary of a compliance operation.
+
+Your job:
+- Rewrite it in a natural, human conversational way
+- Make it easy to understand
+- Keep it concise
+- DO NOT change meaning
+- DO NOT add or remove facts
+- DO NOT hallucinate
+- DO NOT repeat unnecessarily
+
+Just improve clarity and tone.
+
+Output only the final response and do not answer anything not related to the summary.
+"""
+
 # =========================
 # 🔧 BUILD GRAPH
 # =========================
@@ -284,7 +303,6 @@ async def build_graph():
 
     tools = await client.get_tools()
 
-
     # LLM
     llm = ChatGroq(api_key=Groq_API_Key, model="llama-3.1-8b-instant", temperature=0)
 
@@ -293,6 +311,35 @@ async def build_graph():
     # =========================
     # 🧠 LLM NODE
     # =========================
+
+
+    # LLM to respond
+    async def response_node(state: ChatState):
+
+        last_msg = state["messages"][-1]
+
+        # safety: only process sanitized outputs
+        if not (isinstance(last_msg, AIMessage) and last_msg.additional_kwargs.get("sanitized")):
+            return {"messages": [last_msg]}
+
+        response = await llm.ainvoke([
+            {"role": "system", "content": RESPONSE_PROMPT},
+            {"role": "user", "content": last_msg.content}
+        ])
+
+        return {
+            "messages": [
+                AIMessage(
+                    content=response.content,
+                    additional_kwargs={
+                        "safe": True,
+                        "final": True
+                    }
+                )
+            ]
+        } 
+
+
     async def chat_node(state: ChatState):
         messages = state["messages"]
 
@@ -435,12 +482,13 @@ async def build_graph():
     graph.add_node("chat", chat_node)
     graph.add_node("tools", tool_wrapper)
     graph.add_node("sanitize", sanitize_node)
+    graph.add_node("response", response_node)
 
     graph.add_edge(START, "chat")
     graph.add_conditional_edges("chat", tools_condition)
 
     graph.add_edge("tools", "sanitize")
-    graph.add_edge("sanitize", "chat")
+    graph.add_edge("sanitize", "response")
 
     chatbot = graph.compile()
 
@@ -467,7 +515,7 @@ async def main():
     while True:
         user_input = input("You: ")
 
-        if user_input.lower() in ["exit", "quit"]:
+        if user_input.lower() in ["exit", "quit", "Stop"]:
             break
 
 
