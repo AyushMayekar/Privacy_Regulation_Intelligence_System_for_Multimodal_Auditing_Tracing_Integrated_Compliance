@@ -39,7 +39,11 @@ def targeted_scan_node(state: DSARAccessState):
 
         result = scan_mongo(state["admin_email"], targeted_request)
         if result.get("success"):
-            all_findings.extend(result.get("findings", []))
+            mongo_findings = result.get("findings", [])
+            for f in mongo_findings:
+                f["dsar_type"] = context.dsar_type.value
+                f["dsar_id"] = context.dsar_id
+            all_findings.extend(mongo_findings)
 
     state["targeted_findings"] = all_findings
     return state

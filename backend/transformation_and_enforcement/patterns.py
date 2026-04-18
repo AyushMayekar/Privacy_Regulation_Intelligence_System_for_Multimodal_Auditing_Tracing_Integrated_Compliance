@@ -42,7 +42,7 @@ DSAR_PATTERNS = {
         re.IGNORECASE
     ),
 
-    "port": re.compile(
+    "portability": re.compile(
         r"\b("
         r"port (?:my|the) (?:data|information)|"
         r"transfer (?:my|the) (?:data|information)|"
@@ -55,7 +55,7 @@ DSAR_PATTERNS = {
         re.IGNORECASE
     ),
 
-    "object": re.compile(
+    "object_to_processing": re.compile(
         r"\b("
         r"object to processing|restrict processing|stop processing|"
         r"opt out|withdraw consent|"

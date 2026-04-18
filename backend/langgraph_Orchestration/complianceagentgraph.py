@@ -1,454 +1,536 @@
-import json, re, asyncio
-import datetime
-from langgraph_Orchestration.data_schema import AgentState
+import asyncio, uuid
+import json
+from typing import TypedDict, Annotated
+from dotenv import load_dotenv
 from config import Groq_API_Key
-from groq import Groq
-from langgraph_Orchestration.tool_registry import TOOL_REGISTRY
-from langgraph.graph import StateGraph, START, END
+from temp_storage import store_data, init_db, cleanup_old_data
+from langchain_groq import ChatGroq
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langgraph.graph import StateGraph, START
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+load_dotenv()
+
+# =========================
+# 🧠 STATE
+# =========================
+class ChatState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    session_id: str
+    admin_email:str
 
 
-MAX_STEPS = 5
+# =========================
+# 🔒 SANITIZER (CRITICAL)
+# =========================
 
-# logging helper
-def log_to_file(stage: str, data: dict):
-    log_entry = {
-        "timestamp": datetime.datetime.now().isoformat(),
-        "stage": stage,
-        "data": data
+# Extracting insughts from scan output
+def extract_tool_data(content):
+    try:
+        # ✅ CASE 1: Already parsed (list/dict)
+        if isinstance(content, list):
+            if len(content) > 0 and isinstance(content[0], dict):
+
+                # MCP format: [{"type":"text","text":"{...}"}]
+                if "text" in content[0]:
+                    parsed_items = []
+
+                    for item in content:
+                        if isinstance(item, dict) and "text" in item:
+                            try:
+                                parsed_items.append(json.loads(item["text"]))
+                            except:
+                                continue
+
+                    # if only one → return dict (preserve old behavior)
+                    if len(parsed_items) == 1:
+                        return parsed_items[0]
+
+                    return parsed_items
+
+                # 🔥 FIX: handle case where DB already gives [{...}]
+                if len(content) == 1 and isinstance(content[0], dict):
+                    return content[0]
+
+            return content
+
+        # ✅ CASE 2: Already dict
+        if isinstance(content, dict):
+            return content
+
+        # ✅ CASE 3: String → then parse
+        if isinstance(content, str):
+            outer = json.loads(content)
+
+            if isinstance(outer, list) and len(outer) > 0:
+                if isinstance(outer[0], dict) and "text" in outer[0]:
+                    parsed = json.loads(outer[0]["text"])
+
+                    # 🔥 SAME FIX HERE
+                    if isinstance(parsed, list) and len(parsed) == 1:
+                        return parsed[0]
+
+                    return parsed
+
+                # 🔥 unwrap plain list
+                if len(outer) == 1 and isinstance(outer[0], dict):
+                    return outer[0]
+
+            return outer
+
+        return None
+
+    except Exception as e:
+        print("❌ extract_tool_data failed:", e)
+        return None
+
+
+
+# Extracting insight from tranformation results 
+def extract_transformation_insights(results):
+    if not results:
+        return {}
+
+    total = len(results)
+
+    type_counts = {}
+    pii_counts = {}
+    law_counts = {}
+    avg_conf = 0
+
+    for r in results:
+        # transformation type
+        t = r.get("transformation_type", "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
+
+        # metadata
+        meta = r.get("metadata", {})
+
+        pii = meta.get("pii_type", "unknown")
+        pii_counts[pii] = pii_counts.get(pii, 0) + 1
+
+        for law in meta.get("derived_laws", []):
+            law_counts[law.upper()] = law_counts.get(law.upper(), 0) + 1
+
+        avg_conf += r.get("confidence", 0)
+
+    avg_conf = avg_conf / total if total else 0
+
+    return {
+        "total_records": total,
+        "transformation_types": type_counts,
+        "pii_types": pii_counts,
+        "laws_applied": law_counts,
+        "average_confidence": round(avg_conf, 2)
     }
 
-    with open("debug_log.jsonl", "a") as f:
-        f.write(json.dumps(log_entry) + "\n")
 
-# LLM config
-groq_client = Groq(api_key=Groq_API_Key)
+def summarize_audits(audits):
+    if not audits:
+        return "No audit logs found."
 
-def call_llm(messages, system_prompt):
+    total = len(audits)
 
+    pii_counts = {}
+    action_counts = {}
+    law_counts = {}
+    avg_conf = 0
 
-    log_to_file("llm_input", {
-        "messages": messages[-3:],
-        "system_prompt": system_prompt[:500]
-    })
+    for a in audits:
+        pii = a.get("pii", "unknown")
+        pii_counts[pii] = pii_counts.get(pii, 0) + 1
 
+        act = a.get("act", "unknown")
+        action_counts[act] = action_counts.get(act, 0) + 1
 
-    response = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            *messages
-        ],
-        temperature=0
+        for law in a.get("laws", []):
+            law_counts[law.upper()] = law_counts.get(law.upper(), 0) + 1
+
+        avg_conf += a.get("conf", 0)
+
+    avg_conf = avg_conf / total if total else 0
+
+    return (
+        f"Retrieved {total} audit logs.\n"
+        f"Average Confidence: {round(avg_conf, 2)}\n"
+        f"PII Types: {pii_counts}\n"
+        f"Actions: {action_counts}\n"
+        f"Laws: {law_counts}"
     )
 
-    content = response.choices[0].message.content
 
-    log_to_file("llm_raw_output", {
-        "content": content
-    })
+def summarize_findings(findings):
+    if not findings:
+        return "No sensitive data found."
 
-    try:
-        parsed = extract_json(content)
-        log_to_file("llm_parsed_output", parsed)
-        return parsed
-    except:
-        return {"action": "mongo_scan"}  # fallback safety
+    total = len(findings)
 
+    type_counts = {}
+    field_counts = {}
+    law_counts = {}
 
-def extract_json(text):
-    try:
-        return json.loads(text)
-    except:
-        match = re.search(r'\{.*?\}', text, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return {"action": "mongo_scan"}
+    for f in findings:
+        t = f.get("type", "unknown")
+        type_counts[t] = type_counts.get(t, 0) + 1
 
+        field = f.get("field_path", "unknown")
+        field_counts[field] = field_counts.get(field, 0) + 1
 
-# Orchestration
-class ComplianceOrchestrator:
+        for law in f.get("mapped_laws", []):
+            law_counts[law] = law_counts.get(law, 0) + 1
 
-    def __init__(self):
-        self.state_store = {}  # replace with Redis later
+    confidence_avg = sum(f.get("confidence", 0) for f in findings) / total
 
-    def start(self, session_id: str, user_input: str, admin_email: str):
-
-        print("\n===== START =====")
-        print("User input:", user_input)
-
-        state = {
-            "messages": [{"role": "user", "content": user_input}],
-            "raw_data": [],
-            "safe_summary": None,
-            "last_tool": None,
-            "next_action": None,
-            "requires_confirmation": False,
-            "approved": False,
-            "final_response": None,
-            "admin_email": admin_email
-        }
-
-        state = agent_graph.invoke(state)
-        state["messages"].append({
-        "role": "assistant",
-        "content": state["safe_summary"]
-        })
-
-        self.state_store[session_id] = state
-
-        return {
-            "message": state["safe_summary"],
-            "requires_confirmation": True
-        }
-
-    def resume(self, session_id: str, user_input: str):
-
-        print("\n===== RESUME =====")
-        print("User said:", user_input)
+    return (
+        f"Detected {total} sensitive records.\n"
+        f"Average Confidence: {round(confidence_avg, 2)}\n"
+        f"Types: {type_counts}\n"
+        f"Top Fields: {dict(list(field_counts.items())[:3])}\n"
+        f"Laws: {law_counts}\n"
+    )
 
 
-        state = self.state_store.get(session_id)
+def summarize_tool_output(content):
+    data = extract_tool_data(content)
 
-        if not state:
-            return {"error": "Session not found"}
+    if not data:
+        return "Tool executed."
 
-        print("Approved:", state["approved"])
+    # =========================
+    # CASE 1: DICT RESPONSE
+    # =========================
+    if isinstance(data, dict):
 
-        # 🔥 update approval
-        if user_input.lower() in ["yes", "y", "continue"]:
-            state["approved"] = True
-        else:
-            state["approved"] = False
+        # Handle audit logs
+        if "result" in data and isinstance(data["result"], list):
+            return summarize_audits(data["result"])
 
-        # ❌ user stopped
-        if not state["approved"]:
-            return {
-                "message": state["safe_summary"],
-                "status": "stopped"
-            }
+        # 🔍 SCAN RESULTS
+        if "findings" in data:
+            return summarize_findings(data["findings"])
 
-        # ✅ continue execution
-        state["messages"].append({
-            "role": "user",
-            "content": user_input
-        })
+        # 🔁 TRANSFORMATION RESULTS
+        elif "results" in data:
+            insights = extract_transformation_insights(data["results"])
 
-        if len(state.get("raw_data", [])) > MAX_STEPS:
-            return {
-                "message": "Execution limit reached",
-                "status": "stopped"
-            }
+            return (
+                f"Transformed {insights['total_records']} records.\n"
+                f"Average Confidence: {insights['average_confidence']}\n"
+                f"Transformation Types: {insights['transformation_types']}\n"
+                f"PII Types: {insights['pii_types']}\n"
+                f"Laws Applied: {insights['laws_applied']}"
+            )
 
-        state = agent_graph.invoke(state)
+        # fallback
+        elif data.get("message"):
+            return data["message"]
 
-        state["messages"].append({
-        "role": "assistant",
-        "content": state["safe_summary"]
-        })
+    # =========================
+    # CASE 2: LIST RESPONSE (rare)
+    # =========================
+    if isinstance(data, list):
+        if len(data) > 0 and "pii" in data[0]:
+            return summarize_audits(data)
 
-        self.state_store[session_id] = state
+        return summarize_findings(data)
 
-        return {
-            "message": state["safe_summary"],
-            "requires_confirmation": True
-        }
+    return "Operation completed."
 
+# =========================
+# 🤖 SYSTEM PROMPT
+# =========================
+SYSTEM_PROMPT = """
+    You are PRISMATIC Compliance Assistant.
 
-# Main Compliance Workflow
-def llm_node(state: AgentState):
+- Handle privacy/compliance tasks: scan → process → transform → audit
+- Use ONLY the provided tools when action is required
+- NEVER invent tools, arguments, or data
+- If input is missing, ask the user instead of guessing
 
-    print("\n===== LLM NODE =====")
-    print("Previous summary:", state.get("safe_summary"))
-    print("Last tool:", state.get("last_tool"))
+- NEVER expose sensitive data (PII/PHI)
+- Always use sanitized summaries
 
-    safe_summary = state.get("safe_summary", "")
-    messages = state["messages"]
+- After tool execution:
+- Explain what was done
+- Summarize results clearly
+- Suggest next steps
 
-    system_prompt = f"""
-        You are PRISMATIC Compliance Assistant.
+- If user asks questions (not actions), respond with guidance, NOT tools
 
-        Context:
-        - Previous step: {safe_summary}
-        - Last tool: {state.get("last_tool")}
-
-        Available tools:
-        - mongo_scan → Scan data
-        - gmail_scan → Scan email data
-        - transform_data → process data
-        - audit_report → final report
-
-        Rules:
-        - Follow workflow:
-        scan → transform → audit
-        - Do NOT repeat the same tool unnecessarily
-        - Do NOT skip steps
-        - If everything is done → choose audit_report
-
-        Return ONLY JSON:
-        {{
-        "action": "<tool_name>",
-        "reason": "<one short sentence>"
-        }}
+- Always give meaningful responses
+- Be concise, clear, and professional
+- Do NOT repeat the same summary
+- Clearly report failures if any
 """
 
-    response = call_llm(messages, system_prompt)
 
-    state["next_action"] = response.get("action", "mongo_scan")
+RESPONSE_PROMPT = """
+You are PRISMATIC Assistant.
 
-    print("Chosen action:", state["next_action"])
+You will be given a system-generated summary of a compliance operation.
 
-    return state
+Your job:
+- Rewrite it in a natural, human conversational way
+- Make it easy to understand
+- Keep it concise
+- DO NOT change meaning
+- DO NOT add or remove facts
+- DO NOT hallucinate
+- DO NOT repeat unnecessarily
 
+Just improve clarity and tone.
 
-def tool_node(state: AgentState):
+Output only the final response and do not answer anything not related to the summary.
+"""
 
-    print("\n===== TOOL NODE =====")
-    print("Executing tool:", state["next_action"])
+# =========================
+# 🔧 BUILD GRAPH
+# =========================
+async def build_graph():
 
-
-    action = state["next_action"]
-    tool = TOOL_REGISTRY.get(action)
-
-    if not tool:
-        print("❌ Invalid tool")
-        state["safe_summary"] = "Invalid tool selected"
-        return state
-
-    if action == "mongo_scan":
-        result = tool(admin_email = state.get("admin_email"))
-        print("\n--- TOOL OUTPUT ---")
-        if isinstance(result, dict):
-            print("Keys:", list(result.keys()))
-            if "findings" in result:
-                print("Findings count:", len(result["findings"]))
-            if "results" in result and result["results"] is not None:
-                print("Results count:", len(result["results"]))
-            else:
-                print("Results is empty or None")
-        else:
-            print("Result type:", type(result))
-        log_to_file("tool_execution", {
-        "action": action,
-        "result_keys": list(result.keys()) if isinstance(result, dict) else str(type(result)),
-        "sample": str(result)[:500]  # avoid huge dump
-        })  
-
-    elif action == "gmail_scan":
-        result = asyncio.run(tool(user_email = state.get("admin_email")))
-        print("\n--- TOOL OUTPUT ---")
-        if isinstance(result, dict):
-            print("Keys:", list(result.keys()))
-            if "findings" in result:
-                print("Findings count:", len(result["findings"]))
-            if "results" in result and result["results"] is not None:
-                print("Results count:", len(result["results"]))
-            else:
-                print("Results is empty or None")
-        else:
-            print("Result type:", type(result))
-        log_to_file("tool_execution", {
-        "action": action,
-        "result_keys": list(result.keys()) if isinstance(result, dict) else str(type(result)),
-        "sample": str(result)  # avoid huge dump
-        })
-
-
-    elif action == "run_dsar_workflow":
-        result = tool(
-            admin_email = state.get("admin_email"),
-            findings=get_latest_findings(state)
-        )
-        print("\n--- TOOL OUTPUT ---")
-        if isinstance(result, dict):
-            print("Keys:", list(result.keys()))
-            if "findings" in result:
-                print("Findings count:", len(result["findings"]))
-            if "results" in result and result["results"] is not None:
-                print("Results count:", len(result["results"]))
-            else:
-                print("Results is empty or None")
-        else:
-            print("Result type:", type(result))
-        log_to_file("tool_execution", {
-        "action": action,
-        "result_keys": list(result.keys()) if isinstance(result, dict) else str(type(result)),
-        "sample": str(result)[:500]  # avoid huge dump
-        })
-
-    elif action == "transform_data":
-        result = tool(
-            admin_email = state.get("admin_email"),
-            findings=get_latest_findings(state)
-        )
-        print("\n--- TOOL OUTPUT ---")
-        if isinstance(result, dict):
-            print("Keys:", list(result.keys()))
-            if "findings" in result:
-                print("Findings count:", len(result["findings"]))
-            if "results" in result and result["results"] is not None:
-                print("Results count:", len(result["results"]))
-            else:
-                print("Results is empty or None")
-        else:
-            print("Result type:", type(result))
-        log_to_file("tool_execution", {
-        "action": action,
-        "result_keys": list(result.keys()) if isinstance(result, dict) else str(type(result)),
-        "sample": str(result)[:500]  # avoid huge dump
-        })
-
-    elif action == "audit_report":
-        result = tool(
-            results=get_latest_findings(state),
-            admin_email = state.get("admin_email")
+    # MCP CLIENT
+    client = MultiServerMCPClient(
+        {
+            "prismatic": {
+                "transport": "stdio",
+                "command": "python",
+                "args": ["server.py"], 
+            }
+        }
     )
-    log_to_file("tool_execution", {
-    "action": action,
-    "result_keys": list(result.keys()) if isinstance(result, dict) else str(type(result)),
-    "sample": str(result)[:500]  # avoid huge dump
-        })
 
-    state["last_tool"] = action
-    state["tool_output"] = result
+    tools = await client.get_tools()
 
-    return state
+    # LLM
+    llm = ChatGroq(api_key=Groq_API_Key, model="llama-3.1-8b-instant", temperature=0)
 
+    llm_with_tools = llm.bind_tools(tools)
 
-def get_latest_findings(state):
-    raw = state.get("raw_data", [])
-
-    print("\n===== GET LATEST FINDINGS =====")
-    print("raw_data length:", len(raw))
-
-    if not raw:
-        print("No previous data")
-
-        log_to_file("get_latest_findings", {
-            "raw_data_length": 0,
-            "latest_keys": None
-        })
-
-        return []
-
-    # ✅ define FIRST
-    latest = raw[-1]
-
-    # ✅ safe logging
-    if isinstance(latest, dict):
-        latest_keys = list(latest.keys())
-    else:
-        latest_keys = str(type(latest))
-
-    log_to_file("get_latest_findings", {
-        "raw_data_length": len(raw),
-        "latest_keys": latest_keys
-    })
-
-    # ✅ extraction logic (safe)
-    if isinstance(latest, dict):
-        if latest.get("findings"):
-            return latest["findings"]
-        if latest.get("results"):
-            return latest["results"]
-
-    return []
+    # =========================
+    # 🧠 LLM NODE
+    # =========================
 
 
-def post_tool_node(state: AgentState):
-    print("\n===== POST TOOL NODE =====")
-    output = state.get("tool_output", {})
+    # LLM to respond
+    async def response_node(state: ChatState):
 
-    if not state.get("raw_data"):
-        state["raw_data"] = []
+        last_msg = state["messages"][-1]
+
+        # safety: only process sanitized outputs
+        if not (isinstance(last_msg, AIMessage) and last_msg.additional_kwargs.get("sanitized")):
+            return {"messages": [last_msg]}
+
+        response = await llm.ainvoke([
+            {"role": "system", "content": RESPONSE_PROMPT},
+            {"role": "user", "content": last_msg.content}
+        ])
+
+        return {
+            "messages": [
+                AIMessage(
+                    content=response.content,
+                    additional_kwargs={
+                        "safe": True,
+                        "final": True
+                    }
+                )
+            ]
+        } 
+
+
+    async def chat_node(state: ChatState):
+        messages = state["messages"]
+
     
-    state["raw_data"].append(output)
+        filtered_messages = [
+    m for m in state["messages"]
+    if isinstance(m, HumanMessage)
+    or (isinstance(m, AIMessage) and m.additional_kwargs.get("safe") and not m.additional_kwargs.get("final"))
+]
+        last_msg = state["messages"][-1]
 
-    last_tool = state.get("last_tool")
+        if isinstance(last_msg, AIMessage) and last_msg.additional_kwargs.get("final"):
+            return {"messages": [last_msg]}
 
-    findings = output.get("findings") or []
-    results = output.get("results") or []
+        response = await llm_with_tools.ainvoke(
+            [{"role": "system", "content": SYSTEM_PROMPT}, *filtered_messages]
+        )
 
-    if findings:
-        count = len(findings)
-    elif results:
-        count = len(results)
-    else:
-        count = 0
+        valid_tool_names = [t.name for t in tools]
 
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            filtered_calls = []
 
-    if last_tool == "mongo_scan":
-        state["safe_summary"] = f"Scan complete. Found {count} records."
-        log_to_file("post_tool", {
-        "last_tool": last_tool,
-        "raw_data_length": len(state["raw_data"]),
-        "latest_keys": list(output.keys()) if isinstance(output, dict) else str(type(output)),
-        "safe_summary": state["safe_summary"]
-        })
+            for call in response.tool_calls:
+                if call["name"] in valid_tool_names:
+                    filtered_calls.append(call)
 
-    elif last_tool == "run_dsar_workflow":
-        state["safe_summary"] = f"DSAR processed for {count} records."
-        log_to_file("post_tool", {
-        "last_tool": last_tool,
-        "raw_data_length": len(state["raw_data"]),
-        "latest_keys": list(output.keys()) if isinstance(output, dict) else str(type(output)),
-        "safe_summary": state["safe_summary"]
-    })
+            response.tool_calls = filtered_calls
 
-    elif last_tool == "transform_data":
-        state["safe_summary"] = f"Transformed {count} records."
-        log_to_file("post_tool", {
-        "last_tool": last_tool,
-        "raw_data_length": len(state["raw_data"]),
-        "latest_keys": list(output.keys()) if isinstance(output, dict) else str(type(output)),
-        "safe_summary": state["safe_summary"]
-        })
+        if hasattr(response, "tool_calls") and not response.tool_calls:
+            return {"messages": [response]}
 
-    elif last_tool == "audit_report":
-        state["safe_summary"] = "Audit report generated."
-        log_to_file("post_tool", {
-        "last_tool": last_tool,
-        "raw_data_length": len(state["raw_data"]),
-        "latest_keys": list(output.keys()) if isinstance(output, dict) else str(type(output)),
-        "safe_summary": state["safe_summary"]
-        })  
-
-    else:
-        state["safe_summary"] = "Operation completed"
-        log_to_file("post_tool", {
-        "last_tool": last_tool,
-        "raw_data_length": len(state["raw_data"]),
-        "latest_keys": list(output.keys()) if isinstance(output, dict) else str(type(output)),
-        "safe_summary": state["safe_summary"]
-        })
-
-    return state
+        if hasattr(response, "tool_calls"):
+            for tool_call in response.tool_calls:
+                tool_call["args"]["session_id"] = state["session_id"]
+                tool_call["args"]["admin_email"] = state["admin_email"]
 
 
-builder = StateGraph(AgentState)
+        return {"messages": [response]}
 
-builder.add_node("llm", llm_node)
-builder.add_node("tool", tool_node)
-builder.add_node("post_tool", post_tool_node)
+    # =========================
+    # 🔧 TOOL NODE
+    # =========================
 
-builder.add_edge(START, "llm")
-builder.add_edge("llm", "tool")
-builder.add_edge("tool", "post_tool")
+    async def tool_wrapper(state: ChatState):
+        ai_msg = state["messages"][-1]
 
-# 🔥 THIS is the interrupt
-builder.add_edge("post_tool", END)
 
-agent_graph = builder.compile()
+        # Run actual ToolNode
+        result = await tool_node.ainvoke(state)
 
-# initiator code
+        new_messages = result.get("messages", [])
+
+        tool_calls = getattr(ai_msg, "tool_calls", None)
+        if not tool_calls:
+            tool_calls = ai_msg.additional_kwargs.get("tool_calls", [])
+
+        for i, tool_msg in enumerate(new_messages[-len(tool_calls):] if tool_calls else new_messages):
+            raw_content = getattr(tool_msg, "content", "")
+            data = extract_tool_data(raw_content)
+
+            findings = []
+
+            if isinstance(data, dict):
+                findings = data.get("findings", []) or data.get("results", [])
+
+                if not findings and ("pii" in data and "act" in data):
+                    findings = [data]
+
+            elif isinstance(data, list):
+                findings = data
+
+            tool_name = None
+            if i < len(tool_calls):
+                tool_name = tool_calls[i].get("name")
+
+            store_data(
+                session_id=state["session_id"],
+                data=findings,
+                source=tool_name or "unknown_tool",
+            )
+
+
+        return result
+    
+    tool_node = ToolNode(tools)
+
+    # =========================
+    # 🔒 SANITIZE NODE
+    # =========================
+    async def sanitize_node(state: ChatState):
+
+        last_msg = state["messages"][-1]
+        raw_content = getattr(last_msg, "content", "")
+
+        if isinstance(last_msg, AIMessage) and last_msg.additional_kwargs.get("final"):
+            return {"messages": [last_msg]}
+
+
+        # ✅ Generate safe summary
+        if raw_content:
+            safe_summary = summarize_tool_output(raw_content)
+        else:
+            safe_summary = "Operation completed."
+
+
+        # 🔥 CRITICAL FIX: REMOVE RAW TOOL OUTPUTS FROM STATE
+        cleaned_messages = []
+
+        for msg in state["messages"]:
+            # ✅ Keep ONLY:
+            # - Human messages
+            # - Already sanitized messages
+            if isinstance(msg, HumanMessage):
+                cleaned_messages.append(msg)
+
+            elif isinstance(msg, AIMessage) and msg.additional_kwargs.get("safe"):
+                cleaned_messages.append(msg)
+
+            # ❌ DROP EVERYTHING ELSE (tool outputs, raw AI responses, etc.)
+
+        return {
+        "messages": cleaned_messages + [
+            AIMessage(
+                content = safe_summary,
+                additional_kwargs={
+                    "safe": True,
+                    "sanitized": True,
+                    "final": True 
+                }
+            )
+        ]
+    }
+
+    # =========================
+    # 🧩 GRAPH
+    # =========================
+    graph = StateGraph(ChatState)
+
+    graph.add_node("chat", chat_node)
+    graph.add_node("tools", tool_wrapper)
+    graph.add_node("sanitize", sanitize_node)
+    graph.add_node("response", response_node)
+
+    graph.add_edge(START, "chat")
+    graph.add_conditional_edges("chat", tools_condition)
+
+    graph.add_edge("tools", "sanitize")
+    graph.add_edge("sanitize", "response")
+
+    chatbot = graph.compile()
+
+    return chatbot
+
+
+# =========================
+# 🚀 MAIN LOOP
+# =========================
+async def main():
+
+    init_db()
+    cleanup_old_data(30)
+    chatbot = await build_graph()
+
+    print("\n🔵 PRISMATIC AI Ready\n")
+
+    state = {
+        "messages": [],
+        "session_id": str(uuid.uuid4()),
+        "admin_email": "ayush01.mayekar@example.com"
+    }
+
+    while True:
+        user_input = input("You: ")
+
+        if user_input.lower() in ["exit", "quit", "Stop"]:
+            break
+
+
+        state["messages"].append(HumanMessage(content=user_input))
+
+        result = await chatbot.ainvoke(state)
+
+
+        final_msg = result["messages"][-1]
+
+        print("\nAssistant:", final_msg.content, "\n")
+
+
+        state = result
+
+
 if __name__ == "__main__":
-    orchestrator = ComplianceOrchestrator()
-
-    session_id = "test123"
-    user_input = input("Speak MF!!!!: ")
-    response = orchestrator.start(session_id, user_input, admin_email="ayush01.mayekar@example.com")
-    print(response["message"])
-
-    while response.get("requires_confirmation"):
-        user_input = input("Continue? (yes/no): ")
-        response = orchestrator.resume(session_id, user_input)
-        print(response["message"])
+    asyncio.run(main())

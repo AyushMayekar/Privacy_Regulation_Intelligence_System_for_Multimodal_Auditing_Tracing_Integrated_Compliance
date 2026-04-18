@@ -1,0 +1,1301 @@
+/* ====================================================
+   PRISMATIC — HOME PAGE STYLES
+   ==================================================== */
+
+/* ── Global base for home page ───────────────────── */
+.home-root {
+  font-family: var(--font);
+  background: var(--c-bg);
+  color: var(--c-text);
+  transition: background var(--t), color var(--t);
+  overflow-x: hidden;
+}
+
+/* ── Shared section wrapper ──────────────────────── */
+.pris-section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ── Shared button base ──────────────────────────── */
+.pris-btn {
+  font-family: var(--font);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 11px 24px;
+  border-radius: var(--r-full);
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all var(--t);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.pris-btn--primary {
+  background: var(--c-accent);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(64, 138, 113, 0.35);
+}
+[data-theme="dark"] .pris-btn--primary {
+  color: #091413;
+  box-shadow: 0 4px 20px rgba(176, 228, 204, 0.2);
+}
+.pris-btn--primary:hover {
+  background: var(--c-accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(64, 138, 113, 0.45);
+}
+[data-theme="dark"] .pris-btn--primary:hover {
+  box-shadow: 0 8px 32px rgba(176, 228, 204, 0.3);
+}
+
+.pris-btn--ghost {
+  background: transparent;
+  color: var(--c-text);
+  border: 1.5px solid var(--c-border-2);
+}
+.pris-btn--ghost:hover {
+  background: var(--c-accent-dim);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+  transform: translateY(-2px);
+}
+
+.pris-btn--large {
+  font-size: 1rem;
+  padding: 14px 32px;
+}
+
+/* ── Section label ───────────────────────────────── */
+.pris-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  background: var(--c-accent-dim);
+  border: 1px solid var(--c-border);
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  margin-bottom: 20px;
+}
+
+/* ====================================================
+   NAVBAR
+   ==================================================== */
+.pris-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 18px 0;
+  transition: all var(--t);
+}
+.pris-nav--scrolled {
+  background: var(--c-nav-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--c-border);
+  padding: 12px 0;
+  box-shadow: var(--sh-sm);
+}
+
+.pris-nav__inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pris-nav__logo {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  margin-right: 20px;
+}
+.pris-nav__logo img {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(64,138,113,0.3));
+  transition: filter var(--t);
+}
+.pris-nav__logo:hover img { filter: drop-shadow(0 4px 16px rgba(64,138,113,0.5)); }
+
+.pris-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.pris-nav__link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--c-text);
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  transition: all var(--t-fast);
+  text-decoration: none;
+  display: block;
+}
+.pris-nav__link:hover {
+  color: var(--c-accent);
+  background: var(--c-accent-dim);
+}
+
+.pris-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.pris-nav__theme {
+  background: none;
+  border: 1.5px solid var(--c-border-2);
+  border-radius: var(--r-sm);
+  padding: 8px;
+  color: var(--c-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--t-fast);
+  flex-shrink: 0;
+}
+.pris-nav__theme:hover {
+  background: var(--c-accent-dim);
+  color: var(--c-accent);
+  border-color: var(--c-accent);
+}
+
+.pris-nav__hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+}
+.pris-nav__hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--c-text);
+  border-radius: 2px;
+  transition: all var(--t);
+}
+
+/* mobile drawer */
+.pris-nav__drawer {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 999;
+  background: var(--c-bg);
+  padding: 100px 32px 40px;
+  flex-direction: column;
+  gap: 8px;
+}
+.pris-nav__drawer.open { display: flex; }
+.pris-nav__drawer .pris-nav__link { font-size: 1.1rem; padding: 14px 18px; }
+
+/* ====================================================
+   HERO
+   ==================================================== */
+.pris-hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  padding-top: 80px;
+}
+
+.pris-hero__bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 60% 40%, rgba(64,138,113,0.08) 0%, transparent 70%),
+              radial-gradient(ellipse 40% 40% at 20% 80%, rgba(176,228,204,0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+[data-theme="dark"] .pris-hero__bg {
+  background: radial-gradient(ellipse 80% 60% at 60% 40%, rgba(176,228,204,0.06) 0%, transparent 70%),
+              radial-gradient(ellipse 40% 40% at 20% 80%, rgba(64,138,113,0.08) 0%, transparent 60%);
+}
+
+.pris-hero__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 80px 28px 100px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+  width: 100%;
+}
+
+/* left */
+.pris-hero__text { position: relative; z-index: 2; }
+
+.pris-hero__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  background: var(--c-accent-dim);
+  border: 1px solid var(--c-border);
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  margin-bottom: 28px;
+  animation: fadeSlideDown 0.8s ease both;
+}
+.pris-hero__badge-dot {
+  width: 6px; height: 6px;
+  background: var(--c-accent);
+  border-radius: 50%;
+  animation: pulse-dot 2s infinite;
+}
+
+.pris-hero__headline {
+  font-size: clamp(2.8rem, 5vw, 4.2rem);
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--c-text);
+  margin: 0 0 24px;
+  animation: fadeSlideUp 0.9s 0.1s ease both;
+}
+.pris-hero__headline span {
+  color: var(--c-accent);
+  position: relative;
+}
+.pris-hero__headline span::after {
+  content: '';
+  position: absolute;
+  bottom: 4px; left: 0; right: 0; height: 3px;
+  background: var(--c-accent);
+  opacity: 0.3;
+  border-radius: 2px;
+}
+
+.pris-hero__sub {
+  font-size: 1.1rem;
+  font-weight: 400;
+  line-height: 1.7;
+  color: var(--c-text-3);
+  max-width: 480px;
+  margin: 0 0 40px;
+  animation: fadeSlideUp 0.9s 0.2s ease both;
+}
+
+.pris-hero__ctas {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  animation: fadeSlideUp 0.9s 0.3s ease both;
+}
+
+.pris-hero__stats {
+  display: flex;
+  gap: 36px;
+  margin-top: 52px;
+  animation: fadeSlideUp 0.9s 0.4s ease both;
+}
+.pris-hero__stat-num {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--c-text);
+  line-height: 1;
+}
+.pris-hero__stat-label {
+  font-size: 0.78rem;
+  color: var(--c-text-3);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.pris-hero__stat-divider {
+  width: 1px;
+  background: var(--c-border);
+}
+
+/* right – abstract shapes */
+.pris-hero__shapes {
+  position: relative;
+  height: 540px;
+  animation: fadeIn 1s 0.3s ease both;
+}
+
+.shape {
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* Big circle outline */
+.shape-1 {
+  width: 340px; height: 340px;
+  border: 2.5px solid var(--c-border-2);
+  top: 40px; right: 0;
+  animation: spin-slow 40s linear infinite;
+}
+/* Tick mark inside big circle */
+.shape-1::before {
+  content: '';
+  position: absolute;
+  top: 30px; left: 30px; right: 30px; bottom: 30px;
+  border-top: 2px solid var(--c-accent);
+  border-right: 2px solid var(--c-accent);
+  border-radius: 50%;
+}
+
+/* Large filled circle dark */
+.shape-2 {
+  width: 200px; height: 200px;
+  background: var(--c-bg-3);
+  top: 100px; right: 80px;
+  border: 2.5px solid var(--c-border);
+  animation: float-1 6s ease-in-out infinite;
+}
+[data-theme="dark"] .shape-2 { background: #1a3d35; }
+
+/* Medium filled circle accent */
+.shape-3 {
+  width: 110px; height: 110px;
+  background: var(--p-medium);
+  top: 60px; right: 240px;
+  animation: float-2 5s 0.5s ease-in-out infinite;
+}
+
+/* Small bright circle */
+.shape-4 {
+  width: 64px; height: 64px;
+  background: var(--p-light);
+  top: 200px; right: 18px;
+  animation: float-1 4s 1s ease-in-out infinite;
+}
+[data-theme="dark"] .shape-4 { background: rgba(176,228,204,0.3); }
+
+/* Pill / capsule */
+.shape-5 {
+  width: 160px; height: 72px;
+  background: transparent;
+  border: 2.5px solid var(--c-accent);
+  border-radius: var(--r-full);
+  top: 360px; right: 100px;
+  animation: float-2 7s 0.3s ease-in-out infinite;
+}
+
+/* Half-circle */
+.shape-6 {
+  width: 120px; height: 60px;
+  background: var(--c-accent);
+  border-radius: 120px 120px 0 0;
+  bottom: 60px; right: 30px;
+  animation: float-1 5.5s 0.8s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+/* Bottom dark circle */
+.shape-7 {
+  width: 90px; height: 90px;
+  background: var(--p-dark);
+  bottom: 40px; right: 190px;
+  animation: float-2 6.5s 1.2s ease-in-out infinite;
+}
+[data-theme="dark"] .shape-7 { background: rgba(40,90,72,0.5); }
+
+/* Small outline dot */
+.shape-8 {
+  width: 44px; height: 44px;
+  border: 2.5px solid var(--p-light);
+  top: 310px; right: 280px;
+  animation: float-1 4.5s 0.6s ease-in-out infinite;
+}
+[data-theme="dark"] .shape-8 { border-color: rgba(176, 228, 204, 0.4); }
+
+/* Diagonal pill */
+.shape-9 {
+  width: 70px; height: 70px;
+  background: var(--c-accent-dim);
+  border: 2px solid var(--c-accent);
+  top: 460px; right: 290px;
+  border-radius: var(--r-full);
+  animation: float-2 8s 0.2s ease-in-out infinite;
+}
+
+/* ====================================================
+   SCROLL SECTION  (what/why/how)
+   ==================================================== */
+.pris-scroll {
+  padding: 120px 0;
+  background: var(--c-bg-2);
+  transition: background var(--t);
+}
+
+.pris-scroll__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.pris-scroll__header {
+  text-align: center;
+  margin-bottom: 80px;
+}
+
+.pris-scroll__title {
+  font-size: clamp(2rem, 3.5vw, 3rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 16px;
+}
+
+.pris-scroll__sub {
+  font-size: 1.05rem;
+  color: var(--c-text-3);
+  max-width: 520px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+/* step panels */
+.pris-scroll__steps { display: flex; flex-direction: column; gap: 80px; }
+
+.pris-scroll__step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(48px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.pris-scroll__step.reversed { direction: rtl; }
+.pris-scroll__step.reversed > * { direction: ltr; }
+.pris-scroll__step.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.pris-scroll__step-num {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pris-scroll__step-num::before {
+  content: '';
+  display: block;
+  width: 24px; height: 2px;
+  background: var(--c-accent);
+  border-radius: 2px;
+}
+
+.pris-scroll__step-h {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  margin: 0 0 16px;
+  line-height: 1.2;
+}
+
+.pris-scroll__step-p {
+  font-size: 1rem;
+  color: var(--c-text-3);
+  line-height: 1.75;
+  margin: 0 0 24px;
+}
+
+.pris-scroll__step-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pris-scroll__pill {
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--c-accent-dim);
+  color: var(--c-accent);
+  border: 1px solid var(--c-border);
+  padding: 5px 14px;
+  border-radius: var(--r-full);
+}
+
+/* visual cards inside steps */
+.pris-scroll__visual {
+  background: var(--c-card);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--sh-md);
+  padding: 32px;
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow var(--t);
+}
+.pris-scroll__visual::before {
+  content: '';
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 160px; height: 160px;
+  background: radial-gradient(circle, var(--c-accent-dim) 0%, transparent 70%);
+  pointer-events: none;
+}
+.pris-scroll__visual:hover { box-shadow: var(--sh-lg); }
+
+/* ====================================================
+   FEATURES
+   ==================================================== */
+.pris-features {
+  padding: 120px 0;
+  background: var(--c-bg);
+  transition: background var(--t);
+}
+
+.pris-features__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.pris-features__header {
+  text-align: center;
+  margin-bottom: 70px;
+}
+
+.pris-features__title {
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+}
+
+.pris-features__sub {
+  font-size: 1rem;
+  color: var(--c-text-3);
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+.pris-features__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.pris-feature-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--t);
+  opacity: 0;
+  transform: translateY(40px);
+  cursor: default;
+}
+.pris-feature-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.pris-feature-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, var(--c-accent-dim), transparent 60%);
+  opacity: 0;
+  transition: opacity var(--t);
+}
+.pris-feature-card:hover {
+  transform: translateY(-6px);
+  border-color: var(--c-border-2);
+  box-shadow: var(--sh-lg);
+}
+.pris-feature-card:hover::before { opacity: 1; }
+
+.pris-feature-card__icon {
+  width: 52px; height: 52px;
+  background: var(--c-accent-dim);
+  border: 1.5px solid var(--c-border);
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--t);
+}
+.pris-feature-card:hover .pris-feature-card__icon {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+}
+.pris-feature-card:hover .pris-feature-card__icon svg { stroke: #fff; }
+[data-theme="dark"] .pris-feature-card:hover .pris-feature-card__icon svg {
+  stroke: #091413;
+}
+
+.pris-feature-card__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.pris-feature-card__desc {
+  font-size: 0.9rem;
+  color: var(--c-text-3);
+  line-height: 1.65;
+  margin: 0;
+  flex: 1;
+}
+
+/* ====================================================
+   DASHBOARD PREVIEW
+   ==================================================== */
+.pris-dbpreview {
+  padding: 120px 0;
+  background: var(--c-bg-2);
+  transition: background var(--t);
+}
+
+.pris-dbpreview__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.pris-dbpreview__header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+.pris-dbpreview__title {
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+}
+
+.pris-dbpreview__sub {
+  font-size: 1rem;
+  color: var(--c-text-3);
+  max-width: 460px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+/* the mock dashboard frame */
+.pris-db {
+  background: #091413;
+  border-radius: var(--r-xl);
+  border: 1px solid rgba(176,228,204,0.12);
+  box-shadow: var(--sh-xl), 0 0 80px rgba(64,138,113,0.08);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(40px) scale(0.98);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+.pris-db.visible { opacity: 1; transform: translateY(0) scale(1); }
+
+.pris-db__topbar {
+  background: #0c1c19;
+  border-bottom: 1px solid rgba(176,228,204,0.1);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pris-db__dots { display: flex; gap: 7px; }
+.pris-db__dot {
+  width: 11px; height: 11px; border-radius: 50%;
+}
+.pris-db__dot--r { background: #ef4444; }
+.pris-db__dot--y { background: #f59e0b; }
+.pris-db__dot--g { background: #10b981; }
+
+.pris-db__title-bar {
+  flex: 1;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(176,228,204,0.5);
+}
+
+.pris-db__body {
+  display: grid;
+  grid-template-columns: 200px 1fr 280px;
+  min-height: 440px;
+}
+
+/* sidebar */
+.pris-db__sidebar {
+  background: #0c1c19;
+  border-right: 1px solid rgba(176,228,204,0.08);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pris-db__sidebar-logo {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #b0e4cc;
+  letter-spacing: 0.08em;
+  padding: 0 8px 16px;
+  border-bottom: 1px solid rgba(176,228,204,0.08);
+  margin-bottom: 8px;
+}
+.pris-db__nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(176,228,204,0.5);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.pris-db__nav-item:hover, .pris-db__nav-item.active {
+  background: rgba(176,228,204,0.08);
+  color: #b0e4cc;
+}
+.pris-db__nav-item.active { color: #b0e4cc; }
+
+/* main content */
+.pris-db__main { padding: 24px; overflow: hidden; }
+
+.pris-db__greeting {
+  font-size: 0.85rem;
+  color: rgba(176,228,204,0.5);
+  margin-bottom: 20px;
+  font-weight: 500;
+}
+.pris-db__greeting strong { color: #b0e4cc; font-weight: 700; }
+
+.pris-db__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.pris-db__metric {
+  background: #102420;
+  border: 1px solid rgba(176,228,204,0.08);
+  border-radius: 12px;
+  padding: 14px;
+}
+.pris-db__metric-label {
+  font-size: 0.7rem;
+  color: rgba(176,228,204,0.45);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.pris-db__metric-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #f5f7f6;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.pris-db__metric-trend {
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pris-db__metric-trend--up   { color: #10b981; }
+.pris-db__metric-trend--down { color: #ef4444; }
+
+/* chart area */
+.pris-db__chart-wrap {
+  background: #102420;
+  border: 1px solid rgba(176,228,204,0.08);
+  border-radius: 12px;
+  padding: 16px;
+}
+.pris-db__chart-title {
+  font-size: 0.75rem;
+  color: rgba(176,228,204,0.5);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.pris-db__chart-svg { width: 100%; display: block; }
+
+/* right panel */
+.pris-db__right {
+  border-left: 1px solid rgba(176,228,204,0.08);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pris-db__panel-title {
+  font-size: 0.75rem;
+  color: rgba(176,228,204,0.4);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* analytics bars */
+.pris-db__analytics { display: flex; flex-direction: column; gap: 10px; }
+.pris-db__bar-row { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px;
+  font-size: 0.72rem;
+  color: rgba(176,228,204,0.55);
+}
+.pris-db__bar-label { width: 90px; flex-shrink: 0; }
+.pris-db__bar-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(176,228,204,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.pris-db__bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #408a71, #b0e4cc);
+  border-radius: 2px;
+}
+
+/* activity log */
+.pris-db__log { display: flex; flex-direction: column; gap: 8px; }
+.pris-db__log-item {
+  background: #102420;
+  border: 1px solid rgba(176,228,204,0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.72rem;
+}
+.pris-db__log-action {
+  color: rgba(176,228,204,0.8);
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.pris-db__log-meta {
+  color: rgba(176,228,204,0.35);
+  display: flex;
+  justify-content: space-between;
+}
+.pris-db__log-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 50px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.pris-db__log-badge--warn { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.pris-db__log-badge--ok   { background: rgba(16,185,129,0.15); color: #10b981; }
+.pris-db__log-badge--info { background: rgba(59,130,246,0.15); color: #60a5fa; }
+
+/* ====================================================
+   DEVELOPERS
+   ==================================================== */
+.pris-devs {
+  padding: 120px 0;
+  background: var(--c-bg);
+  transition: background var(--t);
+}
+
+.pris-devs__inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.pris-devs__header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+
+.pris-devs__title {
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 14px;
+}
+
+.pris-devs__sub {
+  font-size: 1rem;
+  color: var(--c-text-3);
+  max-width: 420px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+.pris-devs__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+/* glassmorphism dev card */
+.pris-dev-card {
+  background: var(--c-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--c-glass-border);
+  border-radius: var(--r-xl);
+  padding: 40px 28px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  transition: all var(--t);
+  opacity: 0;
+  transform: translateY(40px);
+  position: relative;
+  overflow: hidden;
+}
+.pris-dev-card.visible { opacity: 1; transform: translateY(0); }
+.pris-dev-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--c-accent), var(--c-accent-soft));
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.pris-dev-card:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--sh-lg), var(--sh-glow);
+  border-color: var(--c-border-2);
+}
+
+.pris-dev-card__img-wrap {
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  border: 3px solid var(--c-border-2);
+  overflow: hidden;
+  box-shadow: var(--sh-md);
+  transition: all var(--t);
+  flex-shrink: 0;
+}
+.pris-dev-card:hover .pris-dev-card__img-wrap {
+  border-color: var(--c-accent);
+  box-shadow: var(--sh-glow);
+}
+.pris-dev-card__img-wrap img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.pris-dev-card__name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--c-text);
+  line-height: 1.3;
+}
+
+.pris-dev-card__role {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--c-accent);
+  background: var(--c-accent-dim);
+  padding: 4px 14px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--c-border);
+}
+
+.pris-dev-card__links {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.pris-dev-card__link {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--c-accent-dim);
+  border: 1.5px solid var(--c-border);
+  color: var(--c-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: all var(--t-fast);
+}
+.pris-dev-card__link:hover {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: #fff;
+  transform: scale(1.1);
+}
+[data-theme="dark"] .pris-dev-card__link:hover { color: #091413; }
+
+/* ====================================================
+   CTA SECTION
+   ==================================================== */
+.pris-cta {
+  padding: 120px 0;
+  background: var(--c-bg-2);
+  position: relative;
+  overflow: hidden;
+  transition: background var(--t);
+}
+.pris-cta::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px; height: 400px;
+  background: radial-gradient(ellipse, rgba(64,138,113,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+[data-theme="dark"] .pris-cta::before {
+  background: radial-gradient(ellipse, rgba(176,228,204,0.07) 0%, transparent 70%);
+}
+
+.pris-cta__inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 28px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.pris-cta__title {
+  font-size: clamp(2.2rem, 4vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0 0 20px;
+}
+.pris-cta__title span { color: var(--c-accent); }
+
+.pris-cta__sub {
+  font-size: 1.05rem;
+  color: var(--c-text-3);
+  line-height: 1.7;
+  margin: 0 0 40px;
+}
+
+.pris-cta__actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* ====================================================
+   FOOTER
+   ==================================================== */
+.pris-footer {
+  background: var(--c-bg);
+  border-top: 1px solid var(--c-border);
+  padding: 48px 0 24px;
+  transition: background var(--t);
+}
+
+.pris-footer__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+.pris-footer__top {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+  margin-bottom: 48px;
+}
+
+.pris-footer__brand img {
+  height: 32px;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 2px 8px rgba(64,138,113,0.25));
+}
+.pris-footer__brand p {
+  font-size: 0.88rem;
+  color: var(--c-text-3);
+  line-height: 1.7;
+  max-width: 260px;
+  margin: 0;
+}
+
+.pris-footer__col-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-text);
+  margin: 0 0 16px;
+}
+
+.pris-footer__links { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.pris-footer__links a {
+  font-size: 0.88rem;
+  color: var(--c-text-3);
+  text-decoration: none;
+  transition: color var(--t-fast);
+}
+.pris-footer__links a:hover { color: var(--c-accent); }
+
+.pris-footer__bottom {
+  border-top: 1px solid var(--c-border);
+  padding-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.pris-footer__copy {
+  font-size: 0.82rem;
+  color: var(--c-text-3);
+}
+.pris-footer__socials { display: flex; gap: 10px; }
+.pris-footer__social {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--c-accent-dim);
+  border: 1px solid var(--c-border);
+  color: var(--c-accent);
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none;
+  transition: all var(--t-fast);
+}
+.pris-footer__social:hover {
+  background: var(--c-accent);
+  color: #fff;
+  transform: translateY(-2px);
+}
+[data-theme="dark"] .pris-footer__social:hover { color: #091413; }
+
+/* ====================================================
+   ANIMATIONS
+   ==================================================== */
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translateY(-16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes float-1 {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-18px); }
+}
+@keyframes float-2 {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%       { transform: translateY(-12px) rotate(6deg); }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+@keyframes chart-draw {
+  from { stroke-dashoffset: 1000; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ====================================================
+   RESPONSIVE
+   ==================================================== */
+@media (max-width: 1024px) {
+  .pris-features__grid { grid-template-columns: repeat(2, 1fr); }
+  .pris-db__body { grid-template-columns: 1fr 2fr; }
+  .pris-db__right { display: none; }
+  .pris-footer__top { grid-template-columns: 1fr 1fr; gap: 32px; }
+}
+
+@media (max-width: 768px) {
+  .pris-nav__links { display: none; }
+  .pris-nav__hamburger { display: flex; }
+  .pris-nav__actions .pris-btn { display: none; }
+  .pris-nav__actions .pris-nav__theme { display: flex; }
+
+  .pris-hero__inner {
+    grid-template-columns: 1fr;
+    padding: 100px 24px 60px;
+    gap: 48px;
+  }
+  .pris-hero__shapes { height: 300px; }
+  .shape-1 { width: 220px; height: 220px; }
+  .shape-2 { width: 130px; height: 130px; top: 50px; right: 50px; }
+  .shape-3 { width: 70px; height: 70px; top: 30px; right: 160px; }
+  .shape-4 { width: 44px; height: 44px; top: 130px; right: 10px; }
+  .shape-5 { width: 110px; height: 50px; top: 230px; right: 60px; }
+  .shape-6 { width: 80px; height: 40px; bottom: 20px; right: 10px; }
+  .shape-7 { width: 60px; height: 60px; bottom: 20px; right: 110px; }
+  .shape-8, .shape-9 { display: none; }
+
+  .pris-hero__stats { gap: 20px; }
+  .pris-hero__stat-num { font-size: 1.3rem; }
+
+  .pris-scroll__step { grid-template-columns: 1fr; gap: 32px; }
+  .pris-scroll__step.reversed { direction: ltr; }
+
+  .pris-features__grid { grid-template-columns: 1fr; }
+
+  .pris-db__body { grid-template-columns: 1fr; }
+  .pris-db__sidebar { display: none; }
+  .pris-db__metrics { grid-template-columns: 1fr 1fr; }
+
+  .pris-devs__grid { grid-template-columns: 1fr; max-width: 360px; margin: 0 auto; }
+
+  .pris-cta__actions { flex-direction: column; align-items: center; }
+  .pris-cta__actions .pris-btn { width: 100%; max-width: 280px; justify-content: center; }
+
+  .pris-footer__top { grid-template-columns: 1fr; gap: 28px; }
+  .pris-footer__bottom { flex-direction: column; text-align: center; }
+}
+
+@media (max-width: 480px) {
+  .pris-hero__ctas { flex-direction: column; }
+  .pris-hero__ctas .pris-btn { width: 100%; justify-content: center; }
+  .pris-db__metrics { grid-template-columns: 1fr; }
+}
