@@ -1,0 +1,97 @@
+/* ====================================================
+   PRISMATIC — DESIGN TOKENS
+   ==================================================== */
+
+/* ── Light Mode (default) ────────────────────────── */
+:root {
+  /* Palette */
+  --p-light:  #b0e4cc;
+  --p-medium: #408a71;
+  --p-dark:   #285a48;
+  --p-bg:     #091413;
+  --p-white:  #f5f7f6;
+
+  /* Semantic surface */
+  --c-bg:         #f5f7f6;
+  --c-bg-2:       #eaf2ee;
+  --c-bg-3:       #ddeee7;
+  --c-card:       #ffffff;
+  --c-card-hover: #f0f9f5;
+  --c-glass:      rgba(255, 255, 255, 0.72);
+  --c-glass-border: rgba(255, 255, 255, 0.5);
+
+  /* Text */
+  --c-text:   #091413;
+  --c-text-2: #285a48;
+  --c-text-3: #5a8a76;
+
+  /* Accent */
+  --c-accent:       #408a71;
+  --c-accent-hover: #285a48;
+  --c-accent-soft:  #b0e4cc;
+  --c-accent-dim:   rgba(64, 138, 113, 0.12);
+
+  /* Borders */
+  --c-border:   rgba(64, 138, 113, 0.15);
+  --c-border-2: rgba(64, 138, 113, 0.3);
+
+  /* Navbar */
+  --c-nav-bg: rgba(245, 247, 246, 0.82);
+
+  /* Shadows */
+  --sh-xs: 0 1px 3px  rgba(9, 20, 19, 0.06);
+  --sh-sm: 0 2px 10px rgba(9, 20, 19, 0.08);
+  --sh-md: 0 6px 24px rgba(9, 20, 19, 0.10);
+  --sh-lg: 0 16px 56px rgba(9, 20, 19, 0.14);
+  --sh-xl: 0 28px 88px rgba(9, 20, 19, 0.18);
+  --sh-glow: 0 0 32px rgba(64, 138, 113, 0.22);
+  --sh-glow-lg: 0 0 64px rgba(64, 138, 113, 0.18);
+
+  /* Typography */
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Transitions */
+  --t:      0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --t-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --t-slow: 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Radii */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-full: 9999px;
+}
+
+/* ── Dark Mode ───────────────────────────────────── */
+[data-theme="dark"] {
+  --c-bg:         #091413;
+  --c-bg-2:       #0c1c19;
+  --c-bg-3:       #102420;
+  --c-card:       #0f2420;
+  --c-card-hover: #142e29;
+  --c-glass:      rgba(15, 36, 32, 0.82);
+  --c-glass-border: rgba(176, 228, 204, 0.12);
+
+  --c-text:   #f5f7f6;
+  --c-text-2: #b0e4cc;
+  --c-text-3: #6b9e8e;
+
+  --c-accent:       #b0e4cc;
+  --c-accent-hover: #d4f0e2;
+  --c-accent-soft:  #408a71;
+  --c-accent-dim:   rgba(176, 228, 204, 0.1);
+
+  --c-border:   rgba(176, 228, 204, 0.12);
+  --c-border-2: rgba(176, 228, 204, 0.25);
+
+  --c-nav-bg: rgba(9, 20, 19, 0.88);
+
+  --sh-xs: 0 1px 3px  rgba(0, 0, 0, 0.3);
+  --sh-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --sh-md: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --sh-lg: 0 16px 56px rgba(0, 0, 0, 0.5);
+  --sh-xl: 0 28px 88px rgba(0, 0, 0, 0.65);
+  --sh-glow: 0 0 32px rgba(176, 228, 204, 0.12);
+  --sh-glow-lg: 0 0 80px rgba(176, 228, 204, 0.08);
+}
