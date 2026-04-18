@@ -40,24 +40,40 @@ def store_data(session_id, data, source):
     conn.commit()
     conn.close()
 
-def get_latest_data(session_id):
+def get_all_findings(session_id):
     conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
     SELECT data FROM session_data
     WHERE session_id = ?
-    ORDER BY created_at DESC
-    LIMIT 1
+    AND source IN ('gmail_scan', 'mongo_scan')
+    ORDER BY created_at ASC
     """, (session_id,))
 
-    row = cursor.fetchone()
+    rows = cursor.fetchall()
     conn.close()
 
-    if row:
-        return json.loads(row[0])
-    
-    return None
+    all_findings = []
+
+    for row in rows:
+        try:
+            data = json.loads(row[0])
+
+            # ensure it's always a list
+            if isinstance(data, list):
+                all_findings.extend(data)
+
+            elif isinstance(data, dict):
+                # handle tool-style outputs
+                findings = data.get("findings") or data.get("results")
+                if findings:
+                    all_findings.extend(findings)
+
+        except Exception:
+            continue
+
+    return all_findings if all_findings else None
 
 def cleanup_old_data(minutes=30):
     conn = get_conn()

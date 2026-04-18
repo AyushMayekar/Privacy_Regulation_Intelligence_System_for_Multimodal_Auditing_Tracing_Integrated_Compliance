@@ -1,8 +1,7 @@
 import asyncio, uuid
-import json, datetime, ast
+import json
 from typing import TypedDict, Annotated
 from dotenv import load_dotenv
-from langgraph import graph
 from config import Groq_API_Key
 from temp_storage import store_data, init_db, cleanup_old_data
 from langchain_groq import ChatGroq
@@ -13,22 +12,6 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 load_dotenv()
-
-LOG_FILE = "prismatic_logs.jsonl"
-
-def log_event(stage: str, data: dict):
-    try:
-        log_entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
-            "stage": stage,
-            "data": data
-        }
-
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry, default=str) + "\n")
-
-    except Exception as e:
-        print("Logging failed:", str(e))
 
 # =========================
 # 🧠 STATE
@@ -49,20 +32,51 @@ def extract_tool_data(content):
         # ✅ CASE 1: Already parsed (list/dict)
         if isinstance(content, list):
             if len(content) > 0 and isinstance(content[0], dict):
+
+                # MCP format: [{"type":"text","text":"{...}"}]
                 if "text" in content[0]:
-                    return json.loads(content[0]["text"])
+                    parsed_items = []
+
+                    for item in content:
+                        if isinstance(item, dict) and "text" in item:
+                            try:
+                                parsed_items.append(json.loads(item["text"]))
+                            except:
+                                continue
+
+                    # if only one → return dict (preserve old behavior)
+                    if len(parsed_items) == 1:
+                        return parsed_items[0]
+
+                    return parsed_items
+
+                # 🔥 FIX: handle case where DB already gives [{...}]
+                if len(content) == 1 and isinstance(content[0], dict):
+                    return content[0]
+
             return content
 
+        # ✅ CASE 2: Already dict
         if isinstance(content, dict):
             return content
 
-        # ✅ CASE 2: String → then parse
+        # ✅ CASE 3: String → then parse
         if isinstance(content, str):
             outer = json.loads(content)
 
             if isinstance(outer, list) and len(outer) > 0:
                 if isinstance(outer[0], dict) and "text" in outer[0]:
-                    return json.loads(outer[0]["text"])
+                    parsed = json.loads(outer[0]["text"])
+
+                    # 🔥 SAME FIX HERE
+                    if isinstance(parsed, list) and len(parsed) == 1:
+                        return parsed[0]
+
+                    return parsed
+
+                # 🔥 unwrap plain list
+                if len(outer) == 1 and isinstance(outer[0], dict):
+                    return outer[0]
 
             return outer
 
@@ -113,6 +127,40 @@ def extract_transformation_insights(results):
     }
 
 
+def summarize_audits(audits):
+    if not audits:
+        return "No audit logs found."
+
+    total = len(audits)
+
+    pii_counts = {}
+    action_counts = {}
+    law_counts = {}
+    avg_conf = 0
+
+    for a in audits:
+        pii = a.get("pii", "unknown")
+        pii_counts[pii] = pii_counts.get(pii, 0) + 1
+
+        act = a.get("act", "unknown")
+        action_counts[act] = action_counts.get(act, 0) + 1
+
+        for law in a.get("laws", []):
+            law_counts[law.upper()] = law_counts.get(law.upper(), 0) + 1
+
+        avg_conf += a.get("conf", 0)
+
+    avg_conf = avg_conf / total if total else 0
+
+    return (
+        f"Retrieved {total} audit logs.\n"
+        f"Average Confidence: {round(avg_conf, 2)}\n"
+        f"PII Types: {pii_counts}\n"
+        f"Actions: {action_counts}\n"
+        f"Laws: {law_counts}"
+    )
+
+
 def summarize_findings(findings):
     if not findings:
         return "No sensitive data found."
@@ -147,13 +195,6 @@ def summarize_findings(findings):
 def summarize_tool_output(content):
     data = extract_tool_data(content)
 
-    log_event("extracted_tool_data", {
-        "is_none": data is None,
-        "data_type": str(type(data)),
-        "has_findings": isinstance(data, dict) and ("findings" in data or "results" in data),
-        "preview": str(data)[:2000]
-    })
-
     if not data:
         return "Tool executed."
 
@@ -161,6 +202,10 @@ def summarize_tool_output(content):
     # CASE 1: DICT RESPONSE
     # =========================
     if isinstance(data, dict):
+
+        # Handle audit logs
+        if "result" in data and isinstance(data["result"], list):
+            return summarize_audits(data["result"])
 
         # 🔍 SCAN RESULTS
         if "findings" in data:
@@ -186,6 +231,9 @@ def summarize_tool_output(content):
     # CASE 2: LIST RESPONSE (rare)
     # =========================
     if isinstance(data, list):
+        if len(data) > 0 and "pii" in data[0]:
+            return summarize_audits(data)
+
         return summarize_findings(data)
 
     return "Operation completed."
@@ -229,17 +277,13 @@ async def build_graph():
             "prismatic": {
                 "transport": "stdio",
                 "command": "python",
-                "args": ["server.py"],  # your MCP server
+                "args": ["server.py"], 
             }
         }
     )
 
     tools = await client.get_tools()
 
-#     log_event("mcp_tools_loaded", {
-#     "tool_count": len(tools),
-#     "tool_names": [t.name for t in tools]
-# })
 
     # LLM
     llm = ChatGroq(api_key=Groq_API_Key, model="llama-3.1-8b-instant", temperature=0)
@@ -252,10 +296,6 @@ async def build_graph():
     async def chat_node(state: ChatState):
         messages = state["messages"]
 
-    #     log_event("llm_input", {
-    #     "message_count": len(messages),
-    #     "last_3_messages": [str(m.content) for m in messages[-3:]]
-    # })
     
         filtered_messages = [
     m for m in state["messages"]
@@ -279,10 +319,6 @@ async def build_graph():
             for call in response.tool_calls:
                 if call["name"] in valid_tool_names:
                     filtered_calls.append(call)
-                else:
-                    log_event("invalid_tool_blocked", {
-                        "tool": call["name"]
-                    })
 
             response.tool_calls = filtered_calls
 
@@ -294,14 +330,6 @@ async def build_graph():
                 tool_call["args"]["session_id"] = state["session_id"]
                 tool_call["args"]["admin_email"] = state["admin_email"]
 
-#         log_event("routing_decision", {
-#     "has_tool_call": hasattr(response, "tool_calls") and response.tool_calls is not None
-# })
-
-    #     log_event("llm_output", {
-    #     "response": str(response),
-    #     "tool_calls": getattr(response, "tool_calls", None)
-    # })
 
         return {"messages": [response]}
 
@@ -312,9 +340,6 @@ async def build_graph():
     async def tool_wrapper(state: ChatState):
         ai_msg = state["messages"][-1]
 
-        # log_event("tool_call_detected", {
-        #     "message": str(ai_msg)
-        # })
 
         # Run actual ToolNode
         result = await tool_node.ainvoke(state)
@@ -334,6 +359,9 @@ async def build_graph():
             if isinstance(data, dict):
                 findings = data.get("findings", []) or data.get("results", [])
 
+                if not findings and ("pii" in data and "act" in data):
+                    findings = [data]
+
             elif isinstance(data, list):
                 findings = data
 
@@ -344,18 +372,9 @@ async def build_graph():
             store_data(
                 session_id=state["session_id"],
                 data=findings,
-                source=tool_name or "unknown"
+                source=tool_name or "unknown_tool",
             )
 
-            log_event("db_write", {
-                "session_id": state["session_id"],
-                "source": tool_name,
-                "preview": str(findings)[:200]
-            })
-
-        # log_event("tool_execution_result", {
-        #     "result": str(result)
-        # })
 
         return result
     
@@ -372,9 +391,6 @@ async def build_graph():
         if isinstance(last_msg, AIMessage) and last_msg.additional_kwargs.get("final"):
             return {"messages": [last_msg]}
 
-        log_event("sanitize_input", {
-            "raw_tool_output": str(raw_content)[:1000]
-        })
 
         # ✅ Generate safe summary
         if raw_content:
@@ -382,9 +398,6 @@ async def build_graph():
         else:
             safe_summary = "Operation completed."
 
-        log_event("sanitize_output", {
-            "safe_summary": safe_summary
-        })
 
         # 🔥 CRITICAL FIX: REMOVE RAW TOOL OUTPUTS FROM STATE
         cleaned_messages = []
@@ -457,27 +470,16 @@ async def main():
         if user_input.lower() in ["exit", "quit"]:
             break
 
-#         log_event("user_input", {
-#     "input": user_input,
-#     "session_id": state["session_id"],
-#     "admin_email": state["admin_email"]
-# })
 
         state["messages"].append(HumanMessage(content=user_input))
 
         result = await chatbot.ainvoke(state)
 
-#         log_event("state_snapshot", {
-#     "message_count": len(result["messages"])
-# })
 
         final_msg = result["messages"][-1]
 
         print("\nAssistant:", final_msg.content, "\n")
 
-        log_event("final_output", {
-    "response": final_msg.content
-})
 
         state = result
 
