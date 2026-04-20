@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from user_auth.core import extract_and_verify_token
 from integrations.data_schema import MongoIntegration
 from integrations.core import MongoConnection, GmailConnection, GmailCallback
+from config import Integrations
 
 router_integrate = APIRouter()
 
@@ -52,3 +53,16 @@ async def gmail_callback(request: Request, code: str):
         return {"message": result["message"]}
     else:
         raise HTTPException(status_code=400, detail=result["message"])
+
+@router_integrate.get("/status")
+async def get_integration_status(admin_email: str = Depends(extract_and_verify_token)):
+    try:
+        data = Integrations.find_one({"admin_email": admin_email}) or {}
+
+        return {
+            "mongo": data.get("MongoConnection", False),
+            "gmail": data.get("GmailConnection", False)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch integration status: {str(e)}")
