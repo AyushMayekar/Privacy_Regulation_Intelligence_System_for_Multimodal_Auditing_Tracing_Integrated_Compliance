@@ -5,7 +5,11 @@ from fastapi import FastAPI
 from config import Secret_key
 from user_auth.routes import router_auth
 from integrations.routes import router_integrate
+from chat.routes import router_chat
+from auditing_and_reporting.routes import router_audits 
+from langgraph_Orchestration.routes import router_findings
 from starlette.middleware.sessions import SessionMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
@@ -14,9 +18,20 @@ sys.path.insert(0, str(project_root))
 app = FastAPI(title="PRISMATIC API", version="1.0.0")
 app.add_middleware(SessionMiddleware, secret_key = Secret_key)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Include the user_auth router
 app.include_router(router_auth, prefix="/auth", tags=["Authentication"])
-app.include_router(router_integrate, prefix= "/integrate", tags=["Integrations"])
+app.include_router(router_integrate, prefix="/integrate", tags=["Integrations"])
+app.include_router(router_chat, prefix="/chat", tags=["Chat"])
+app.include_router(router_audits, prefix="/audits", tags=["Audits"])
+app.include_router(router_findings, prefix="/findings", tags=["Findings"])
 
 @app.get("/", tags=["Root"])
 async def root():

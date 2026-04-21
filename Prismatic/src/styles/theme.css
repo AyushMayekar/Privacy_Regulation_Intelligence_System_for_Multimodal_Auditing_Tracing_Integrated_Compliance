@@ -2,6 +2,17 @@
    PRISMATIC — DESIGN TOKENS
    ==================================================== */
 
+/* ── Global base — persists across all routes ─────── */
+html,
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin: 0;
+  padding: 0;
+}
+
 /* ── Light Mode (default) ────────────────────────── */
 :root {
   /* Palette */
