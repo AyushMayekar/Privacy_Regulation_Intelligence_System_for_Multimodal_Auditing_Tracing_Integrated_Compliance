@@ -19,6 +19,7 @@ import '../styles/workspace.css';
 import IntegrationsPage from './IntegrationsPage';
 import FindingsPage from './FindingsPage';
 import AuditLogsPage from './AuditLogsPage';
+import SettingsPage from './SettingsPage';
 /* ─── Placeholder for non-chat sections ──────────── */
 function PlaceholderPage({ title, icon }) {
     return (_jsxs("div", { style: {
@@ -73,5 +74,5 @@ export default function Dashboard() {
     const lastScanCount = lastScanMsg?.data ? lastScanMsg.data.total_records : undefined;
     const lastAuditMsg = [...messages].reverse().find(m => m.responseType === 'audit');
     const auditCount = lastAuditMsg?.data ? lastAuditMsg.data.total : undefined;
-    return (_jsxs("div", { className: "ws-root", children: [_jsx(TopBar, { adminEmail: adminEmail, onClear: clearChat }), _jsxs("div", { className: "ws-body", children: [_jsx(WorkspaceSidebar, { active: active, setActive: setActive, messageCount: messageCount, lastScanCount: lastScanCount, auditCount: auditCount }), _jsxs("main", { className: "ws-main", children: [active === 'chat' && (_jsxs(_Fragment, { children: [_jsx(ChatArea, { messages: messages, loading: loading }), _jsx(InputBar, { onSend: sendMessage, disabled: loading })] })), active === 'audits' && _jsx(AuditLogsPage, {}), active === 'integrations' && _jsx(IntegrationsPage, {}), active === 'findings' && _jsx(FindingsPage, {}), active === 'settings' && _jsx(PlaceholderPage, { title: "Settings", icon: _jsx(SvgSettings, {}) })] })] }), _jsx(BottomNav, { active: active, setActive: setActive })] }));
+    return (_jsxs("div", { className: "ws-root", children: [_jsx(TopBar, { adminEmail: adminEmail, onClear: clearChat }), _jsxs("div", { className: "ws-body", children: [_jsx(WorkspaceSidebar, { active: active, setActive: setActive, messageCount: messageCount, lastScanCount: lastScanCount, auditCount: auditCount }), _jsxs("main", { className: "ws-main", children: [active === 'chat' && (_jsxs(_Fragment, { children: [_jsx(ChatArea, { messages: messages, loading: loading }), _jsx(InputBar, { onSend: sendMessage, disabled: loading })] })), active === 'audits' && _jsx(AuditLogsPage, {}), active === 'integrations' && _jsx(IntegrationsPage, {}), active === 'findings' && _jsx(FindingsPage, {}), active === 'settings' && _jsx(SettingsPage, {})] })] }), _jsx(BottomNav, { active: active, setActive: setActive })] }));
 }

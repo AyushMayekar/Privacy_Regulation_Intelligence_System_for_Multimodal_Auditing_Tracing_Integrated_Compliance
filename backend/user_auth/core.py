@@ -1,6 +1,6 @@
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, Response, Cookie
-from config import Users, Secret_key, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES, algo
+from config import Users, Secret_key, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES, algo, Integrations
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from typing import Optional
@@ -105,4 +105,41 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
         "message": "User logged in successfully!",
         "access_token": access_token,
         "token_type": "Bearer"
+    }
+
+def get_user_profile(admin_email: str):
+    """
+    Fetch profile + integration status for settings page
+    """
+
+    # ── Fetch user ──
+    user = Users.find_one(
+        {"admin_email": admin_email},
+        {"_id": 0, "admin_name": 1, "admin_email": 1, "org_name": 1}
+    )
+
+    if not user:
+        return None
+
+    # ── Fetch integrations ──
+    integration = Integrations.find_one(
+        {"admin_email": admin_email},
+        {"_id": 0, "MongoConnection": 1, "GmailConnection": 1}
+    )
+
+    # Default fallback
+    mongo_status = False
+    gmail_status = False
+
+    if integration:
+        mongo_status = integration.get("MongoConnection", False)
+        gmail_status = integration.get("GmailConnection", False)
+
+    # ── Merge response ──
+    return {
+        "admin_name": user.get("admin_name", ""),
+        "admin_email": user.get("admin_email", ""),
+        "org_name": user.get("org_name", ""),
+        "MongoConnection": mongo_status,
+        "GmailConnection": gmail_status,
     }

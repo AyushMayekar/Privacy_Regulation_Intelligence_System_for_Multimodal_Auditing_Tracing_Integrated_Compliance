@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from fastapi.security import OAuth2PasswordRequestForm
-from user_auth.core import verify_token, create_access_token, register_user, login_for_access_token
+from user_auth.core import verify_token, create_access_token, register_user, login_for_access_token, get_user_profile, extract_and_verify_token
 from config import Users, Secret_key, ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_MINUTES, algo
 from user_auth.data_schema import UserCreate
 from jose import JWTError, jwt
@@ -188,6 +188,28 @@ async def logout(response: Response, access_token: str = Cookie(None)):
     response.delete_cookie("access_token")
     
     return {"message": "Successfully logged out"}
+
+
+@router_auth.get("/profile")
+async def get_profile(
+    admin_email: str = Depends(extract_and_verify_token),
+):
+    try:
+        data = get_user_profile(admin_email)
+
+        if not data:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+
+        return data
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch profile: {str(e)}"
+        )
 
 ''' 
 Testing User

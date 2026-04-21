@@ -20,6 +20,7 @@ import '../styles/workspace.css'
 import IntegrationsPage from './IntegrationsPage'
 import FindingsPage from './FindingsPage'
 import AuditLogsPage from './AuditLogsPage'
+import SettingsPage from './SettingsPage'
 
 /* ─── Placeholder for non-chat sections ──────────── */
 function PlaceholderPage({ title, icon }: { title: string; icon: React.ReactNode }) {
@@ -206,7 +207,7 @@ export default function Dashboard() {
           {active === 'audits' && <AuditLogsPage />}
           {active === 'integrations' && <IntegrationsPage />}
           {active === 'findings' && <FindingsPage />}
-          {active === 'settings' && <PlaceholderPage title="Settings" icon={<SvgSettings />} />}
+          {active === 'settings' && <SettingsPage />}
         </main>
       </div>
 
