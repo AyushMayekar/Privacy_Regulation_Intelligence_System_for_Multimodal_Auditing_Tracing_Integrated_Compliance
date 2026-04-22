@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useState } from 'react';
 import StatusBadge from './StatusBadge';
-import { connectMongo, getGmailRedirectUrl } from '../api/integrationApi';
+import { connectMongo, startGmailOAuth } from '../api/integrationApi';
 export default function IntegrationCard({ id, name, description, icon, status, type, adminEmail, onStatusChange, }) {
     const [mongoUri, setMongoUri] = useState('');
     const [feedback, setFeedback] = useState(null);
@@ -34,8 +34,7 @@ export default function IntegrationCard({ id, name, description, icon, status, t
         setStatus('loading');
         setFeedback(null);
         try {
-            const url = await getGmailRedirectUrl();
-            window.location.href = url;
+            startGmailOAuth();
         }
         catch (err) {
             setStatus('not_connected');

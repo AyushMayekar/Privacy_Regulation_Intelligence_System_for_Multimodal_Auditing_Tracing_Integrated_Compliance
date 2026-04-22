@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import StatusBadge from './StatusBadge'
-import { connectMongo, getGmailRedirectUrl } from '../api/integrationApi'
+import { connectMongo, startGmailOAuth } from '../api/integrationApi'
 
 type Status = 'connected' | 'not_connected' | 'loading'
 
@@ -51,8 +51,7 @@ export default function IntegrationCard({
     setStatus('loading')
     setFeedback(null)
     try {
-      const url = await getGmailRedirectUrl()
-      window.location.href = url
+      startGmailOAuth()
     } catch (err: any) {
       setStatus('not_connected')
       setFeedback({ type: 'error', text: err?.message ?? 'Failed to start Gmail OAuth.' })

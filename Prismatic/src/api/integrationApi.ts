@@ -20,11 +20,6 @@ export async function connectMongo(mongo_uri: string): Promise<{ message: string
   return data
 }
 
-export async function getGmailRedirectUrl(): Promise<string> {
-  const res = await fetch(`${BASE}/gmail`, {
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Failed to initiate Gmail OAuth')
-  const data = await res.json()
-  return data.url ?? data.redirect_url ?? data.authorization_url
+export function startGmailOAuth() {
+  window.location.href = '/integrate/gmail'
 }
