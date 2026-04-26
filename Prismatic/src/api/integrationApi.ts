@@ -1,4 +1,6 @@
-const BASE = '/integrate'
+// Production: resolves to https://privacy-regulation-intelligence-system.onrender.com/integrate
+// Development: resolves to /integrate (empty string → Vite proxy forwards to localhost:8000)
+const BASE = `${import.meta.env.VITE_API_URL ?? ''}/integrate`
 
 export async function getIntegrationStatus(): Promise<{ mongo: boolean; gmail: boolean }> {
   const res = await fetch(`${BASE}/status`, {
@@ -21,5 +23,7 @@ export async function connectMongo(mongo_uri: string): Promise<{ message: string
 }
 
 export function startGmailOAuth() {
-  window.location.href = '/integrate/gmail'
+  // Full URL needed for browser redirect — uses deployed backend in production,
+  // falls back to /integrate/gmail (Vite proxy) in local development.
+  window.location.href = `${BASE}/gmail`
 }

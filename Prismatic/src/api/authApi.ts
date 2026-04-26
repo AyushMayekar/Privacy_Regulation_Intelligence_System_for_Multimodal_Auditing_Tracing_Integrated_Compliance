@@ -1,12 +1,14 @@
 /**
  * authApi.ts — Prismatic Auth API Service
  *
- * Talks to the FastAPI backend at http://localhost:8000
+ * BASE_URL is controlled by VITE_API_URL (see .env.production / .env.development):
+ *   • Production (Vercel)   → https://privacy-regulation-intelligence-system.onrender.com
+ *   • Development (local)   → '' (empty string, Vite proxy forwards to localhost:8000)
  *
  * Endpoints:
- *   POST /auth/token    → Login  (OAuth2PasswordRequestForm: username + password)
- *   POST /auth/register → Signup (JSON: org_name, admin_name, admin_email, password, consent)
- *   POST /auth/logout   → Logout (clears httpOnly cookies server-side)
+ *   POST /auth/token     → Login  (OAuth2PasswordRequestForm: username + password)
+ *   POST /auth/register  → Signup (JSON: org_name, admin_name, admin_email, password, consent)
+ *   POST /auth/logout    → Logout (clears httpOnly cookies server-side)
  *   GET  /auth/protected → Verify session (reads httpOnly cookie automatically)
  *
  * Tokens are stored as httpOnly cookies by the server — we never touch them

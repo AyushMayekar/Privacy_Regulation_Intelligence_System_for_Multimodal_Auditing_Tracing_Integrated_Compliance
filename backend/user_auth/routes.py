@@ -140,7 +140,7 @@ async def protected(response:Response, access_token: str = Cookie(None)):
             # Attempt to refresh the token
             new_access_token = await refresh_token()
             # Optionally, set the new access token in the cookies
-            response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='lax')
+            response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='None')
             admin_email = verify_token(new_access_token, credentials_exception) 
         else:
             raise e
@@ -176,7 +176,7 @@ async def logout(response: Response, access_token: str = Cookie(None)):
             # Attempt to refresh the token
             new_access_token = await refresh_token()
             # Optionally, set the new access token in the cookies
-            response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='lax')
+            response.set_cookie(key="access_token", value=f"Bearer {new_access_token}", httponly=True, secure=True, samesite='None')
             admin_email = verify_token(new_access_token, credentials_exception) 
         else:
             raise e

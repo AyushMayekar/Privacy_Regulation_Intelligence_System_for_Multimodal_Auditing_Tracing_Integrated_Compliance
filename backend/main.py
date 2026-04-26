@@ -16,12 +16,24 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 app = FastAPI(title="PRISMATIC API", version="1.0.0")
-app.add_middleware(SessionMiddleware, secret_key = Secret_key)
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=Secret_key,
+    same_site="none",  # Required for cross-origin cookies
+    https_only=True    # Required when same_site="none"
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
+    allow_origins=[
+        # ── Production ────────────────────────────────────────────────────────
+        "https://prismatic-lemon.vercel.app",
+
+        # ── Local development ─────────────────────────────────────────────────
+        # Comment the line above and uncomment below when running locally:
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,   # Required for httpOnly cookies to travel cross-origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
