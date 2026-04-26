@@ -89,7 +89,7 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
         value=f"Bearer {access_token}",
         httponly=True,                 # Prevents JavaScript from accessing the token
         secure=True,                   # Ensures it's only sent over HTTPS
-        samesite="Lax",                # Helps prevent CSRF attacks
+        samesite="None",               # Required for cross-origin fetch (Vercel → Render)
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Expiry in seconds
     )
 
@@ -98,7 +98,7 @@ async def login_for_access_token(response: Response, form_data: OAuth2PasswordRe
         value=refresh_token,
         httponly=True,                 # Prevents JavaScript from accessing the token
         secure=True,                   # Ensures it's only sent over HTTPS
-        samesite="Lax",                # Helps prevent CSRF attacks
+        samesite="None",               # Required for cross-origin fetch (Vercel → Render)
         max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60  # Expiry in seconds
     )
     return {
