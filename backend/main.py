@@ -2,7 +2,8 @@ import sys
 import uvicorn
 from pathlib import Path
 from fastapi import FastAPI
-from config import Secret_key
+from contextlib import asynccontextmanager
+from config import Secret_key, create_db_indexes
 from user_auth.routes import router_auth
 from integrations.routes import router_integrate
 from chat.routes import router_chat
@@ -14,6 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs once when the server starts — DB connection is live by this point
+    create_db_indexes()
+    yield
 
 app = FastAPI(title="PRISMATIC API", version="1.0.0")
 app.add_middleware(
